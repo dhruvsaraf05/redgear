@@ -1,0 +1,2706 @@
+{
+  "schema_version": 1,
+  "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+  "state": "draft",
+  "generated_at": "2026-08-11T00:00:00Z",
+  "nodes": [
+    {
+      "id": "T-0001",
+      "type": "scaffold",
+      "title": "Repository bootstrap: packaging, tooling, CI, secret hygiene",
+      "state": "ready",
+      "spec_refs": [
+        "NFR-5",
+        "NFR-9",
+        "NFR-10"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [],
+      "scope": {
+        "writable_globs": [
+          "pyproject.toml",
+          ".pre-commit-config.yaml",
+          ".github/**",
+          "LICENSE",
+          "README.md",
+          "redgear/__init__.py",
+          "tests/conftest.py"
+        ],
+        "creatable_globs": [
+          "pyproject.toml",
+          ".pre-commit-config.yaml",
+          ".github/**",
+          "LICENSE",
+          "README.md",
+          "redgear/__init__.py",
+          "tests/conftest.py"
+        ],
+        "frozen_globs": []
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Editable install succeeds and exposes the redgear command.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::pip_install_editable"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Strict type checking and linting both execute with zero configuration errors.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::ruff_and_mypy_run"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "CI workflow runs lint, types, tests, and the egress grep gates on push.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::ci_workflow_valid"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Secret scanning pre-commit hook is installed and passes on a clean tree.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::gitleaks_clean"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "SCAFFOLD type: verified by smoke checks, coverage gate disabled. Two-phase TDD does not apply to packaging metadata."
+    },
+    {
+      "id": "T-0002",
+      "type": "test_authoring",
+      "title": "Write failing tests: schemas.py — every Pydantic model",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "FR-2",
+        "FR-3",
+        "NFR-5"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0001"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Every model round-trips through JSON without loss or coercion drift.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_schemas.py::test_all_models_round_trip"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Models reject unknown fields and are immutable where declared frozen.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_schemas.py::test_extra_forbid_and_frozen"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "The event union discriminates correctly on the event field for every type.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_schemas.py::test_event_union_discriminates"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "An implementation node carrying its own acceptance criteria fails validation.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_schemas.py::test_impl_node_may_not_author_criteria"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "schemas.py is a leaf module and must import nothing else from the package."
+    },
+    {
+      "id": "T-0003",
+      "type": "implementation",
+      "title": "Implement: schemas.py — every Pydantic model",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "FR-2",
+        "FR-3",
+        "NFR-5"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0002"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0002"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0004",
+      "type": "test_authoring",
+      "title": "Write failing tests: errors.py and paths.py — error codes and glob resolution",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-2",
+        "NFR-5"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0003"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Every documented error code maps to a distinct exception subclass.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_errors.py::test_all_codes_have_classes"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Recursive glob matching handles nested paths and never matches absolute paths.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_paths.py::test_glob_recursion_and_relativity"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Overlapping writable and frozen globs are detected over a tracked file list.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_paths.py::test_scope_overlap_detected"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0005",
+      "type": "implementation",
+      "title": "Implement: errors.py and paths.py — error codes and glob resolution",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-2",
+        "NFR-5"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0004"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0004"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0006",
+      "type": "test_authoring",
+      "title": "Write failing tests: hashing.py — canonical JSON and content addressing",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "FR-3",
+        "NFR-7"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0005"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Canonical encoding is byte-stable across process restarts and key reordering.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_hashing.py::test_canonical_json_stable"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Reordering the requirements list does not change the specification hash.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_hashing.py::test_requirement_order_irrelevant"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Changing a requirement statement does change the specification hash.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_hashing.py::test_requirement_change_alters_hash"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Metadata fields are excluded from the hashed payload.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_hashing.py::test_metadata_excluded_from_hash"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "File digests are stable and detect single-byte modifications.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_hashing.py::test_file_digest_detects_byte_change"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "Determinism here is load-bearing. If the hash drifts, every downstream guarantee is theatre."
+    },
+    {
+      "id": "T-0007",
+      "type": "implementation",
+      "title": "Implement: hashing.py — canonical JSON and content addressing",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "FR-3",
+        "NFR-7"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0006"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0006"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0008",
+      "type": "test_authoring",
+      "title": "Write failing tests: redact.py — credential redaction for logs and events",
+      "state": "blocked",
+      "spec_refs": [
+        "NFR-1"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0001"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Variables whose names match credential patterns are redacted from mappings.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_redact.py::test_credential_named_keys_redacted"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "A known secret value appearing in free text is replaced before emission.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_redact.py::test_value_redacted_in_free_text"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Redaction is idempotent and never corrupts non-secret content.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_redact.py::test_redaction_idempotent_and_lossless"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0009",
+      "type": "implementation",
+      "title": "Implement: redact.py — credential redaction for logs and events",
+      "state": "blocked",
+      "spec_refs": [
+        "NFR-1"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0008"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0008"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0010",
+      "type": "test_authoring",
+      "title": "Write failing tests: events.py — append-only log with gapless sequencing",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "NFR-7"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0007"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Appending assigns strictly monotonic gapless sequence numbers under repeated writes.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_events.py::test_seq_monotonic_gapless"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Every event type parses back from a written line without loss.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_events.py::test_all_event_types_round_trip"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "A gap or repeated sequence number is reported as corruption and never repaired.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_events.py::test_corruption_reported_not_repaired"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Appends are flushed to disk before the call returns.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_events.py::test_append_is_durable"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0011",
+      "type": "implementation",
+      "title": "Implement: events.py — append-only log with gapless sequencing",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "NFR-7"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0010"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0010"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0012",
+      "type": "test_authoring",
+      "title": "Write failing tests: state_engine.py read path — load, validate, project",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "FR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0011"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Replaying the log reproduces a known task graph byte-identically.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_read.py::test_replay_reproduces_projection"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "A cycle in the edge set is rejected and the offending cycle is named.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_read.py::test_cycle_detected_and_named"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Readiness is computed as all hard dependencies verified, recomputed per load.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_read.py::test_readiness_requires_verified_deps"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "An implementation node without an inherited criteria source fails validation.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_read.py::test_impl_requires_inherited_criteria"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "Task selection prefers nodes on the critical path by descending dependency count.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_read.py::test_selection_drains_critical_path"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0013",
+      "type": "implementation",
+      "title": "Implement: state_engine.py read path — load, validate, project",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "FR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0012"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0012"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0014",
+      "type": "test_authoring",
+      "title": "Write failing tests: state_engine.py write path — transitions and atomic persistence",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "FR-3",
+        "NFR-7"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0013"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Every state transition appends exactly one event.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_write.py::test_one_event_per_transition"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Claiming records the base commit and a digest for every frozen file.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_write.py::test_claim_records_baseline_and_digests"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Projection writes are atomic and never observable in a partial state.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_write.py::test_writes_are_atomic"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "An illegal transition for the current state is rejected with a state error.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_write.py::test_illegal_transition_rejected"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "A blocked outcome escalates the task without incrementing the attempt counter.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_state_write.py::test_blocked_does_not_consume_attempt"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0015",
+      "type": "implementation",
+      "title": "Implement: state_engine.py write path — transitions and atomic persistence",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-1",
+        "FR-3",
+        "NFR-7"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0014"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0014"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0016",
+      "type": "test_authoring",
+      "title": "Write failing tests: locks.py — exclusive task leases and single-run lock",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-2",
+        "NFR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0005"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Concurrent claims on one task result in exactly one winner.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_locks.py::test_exactly_one_claim_wins"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "An expired lease is reaped and the task returns to a claimable state.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_locks.py::test_expired_lease_reaped"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "A second run in the same repository is refused while a run lock is held.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_locks.py::test_single_run_per_repo"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "No termination path leaves an orphaned lock file behind.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_locks.py::test_no_orphan_locks_on_any_exit"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0017",
+      "type": "implementation",
+      "title": "Implement: locks.py — exclusive task leases and single-run lock",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-2",
+        "NFR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0016"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0016"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0018",
+      "type": "test_authoring",
+      "title": "Write failing tests: budget.py — autonomy caps, stop sentinel, signal handling",
+      "state": "blocked",
+      "spec_refs": [
+        "NFR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0005"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Iteration, wall clock, and consecutive failure caps each terminate the run cleanly.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_budget.py::test_each_cap_terminates_run"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Caps are evaluated before an iteration begins and never mid-turn.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_budget.py::test_caps_checked_at_iteration_boundary"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Presence of the stop sentinel ends the run at the next boundary with success status.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_budget.py::test_stop_sentinel_honoured"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Interrupt signals abort the turn, terminate the process tree, and release locks.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_budget.py::test_signal_aborts_and_releases"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0019",
+      "type": "implementation",
+      "title": "Implement: budget.py — autonomy caps, stop sentinel, signal handling",
+      "state": "blocked",
+      "spec_refs": [
+        "NFR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0018"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0018"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0020",
+      "type": "test_authoring",
+      "title": "Write failing tests: gitctx.py — read-only git interrogation and diff parsing",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-6"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0005"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "The changed set is correct for modified, added, deleted, and untracked files.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gitctx.py::test_changed_set_all_kinds"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Untracked files appear in the diff via intent-to-add without creating a commit.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gitctx.py::test_untracked_visible_without_commit"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Changed line numbers are parsed from zero-context hunks with no inflation.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gitctx.py::test_changed_lines_zero_context"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "A dirty working tree is detected and reported with the offending paths.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gitctx.py::test_dirty_tree_detected"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "No operation mutates repository history or creates a commit.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gitctx.py::test_history_never_mutated"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "Runs against a real git fixture repository. Do not mock subprocess here."
+    },
+    {
+      "id": "T-0021",
+      "type": "implementation",
+      "title": "Implement: gitctx.py — read-only git interrogation and diff parsing",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-6"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0020"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0020"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0022",
+      "type": "test_authoring",
+      "title": "Write failing tests: verifier.py gates 1-2 — scope and frozen hash audit",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-3",
+        "FR-6"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0021",
+        "T-0007"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "A write outside the writable scope fails the scope gate naming every offending path.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_scope.py::test_out_of_scope_write_fails"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "A file changed but not declared by the agent fails as an undeclared change.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_scope.py::test_undeclared_change_fails"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "A file declared but never touched fails as a phantom change.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_scope.py::test_phantom_change_fails"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Modification, deletion, or addition inside a frozen glob each fail distinctly.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_frozen.py::test_all_frozen_violation_kinds"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "Every frozen violation is reported, not only the first.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_frozen.py::test_all_violations_reported"
+          }
+        },
+        {
+          "id": "AC-6",
+          "statement": "Gates after a failure are recorded as skipped rather than omitted.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_scope.py::test_later_gates_marked_skipped"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0023",
+      "type": "implementation",
+      "title": "Implement: verifier.py gates 1-2 — scope and frozen hash audit",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-3",
+        "FR-6"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0022"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0022"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0024",
+      "type": "test_authoring",
+      "title": "Write failing tests: verifier.py gates 3-6 — lint, tests, criteria, coverage delta",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-6",
+        "NFR-4"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0023"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "A lint violation inside scope fails the gate and the test suite never runs.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_lint.py::test_in_scope_violation_short_circuits"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "A pre-existing violation outside the task scope does not fail the gate.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_lint.py::test_out_of_scope_violation_ignored"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "A collection error is reported distinctly from an assertion failure.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_tests.py::test_collection_error_distinct"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "For a test authoring task the gate passes only when target tests fail.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_tests.py::test_polarity_inverted_for_test_authoring"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "A criterion citing a nonexistent test node fails as evidence not found.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_criteria.py::test_missing_evidence_fails"
+          }
+        },
+        {
+          "id": "AC-6",
+          "statement": "Coverage is computed over changed lines only and matches a hand-computed ratio.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_coverage.py::test_changed_line_ratio_exact"
+          }
+        },
+        {
+          "id": "AC-7",
+          "statement": "A command exceeding its timeout is a recorded gate failure, not an exception.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_tests.py::test_timeout_is_gate_failure"
+          }
+        },
+        {
+          "id": "AC-8",
+          "statement": "Nested runner invocation is isolated from the outer session cache and root directory.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_gates_tests.py::test_nested_runner_isolated"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "TRAP: this gate runs pytest and coverage inside a fixture repo while itself under pytest. The inner invocation must disable the cache provider, pin an explicit root directory, and scrub PYTEST_* from the environment, or it inherits the outer configuration."
+    },
+    {
+      "id": "T-0025",
+      "type": "implementation",
+      "title": "Implement: verifier.py gates 3-6 — lint, tests, criteria, coverage delta",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-6",
+        "NFR-4"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0024"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0024"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0026",
+      "type": "test_authoring",
+      "title": "Write failing tests: runner protocol and deterministic fake runner",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-5",
+        "NFR-6",
+        "NFR-8"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0003"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "The fake runner satisfies the protocol and applies canned changes without a subprocess.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_fake_runner.py::test_fake_satisfies_protocol"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Each declared agent behaviour scenario produces its documented outcome.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_fake_runner.py::test_all_scenarios_behave_as_declared"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "No test path spawns a real agent process or opens a network connection.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_fake_runner.py::test_no_subprocess_or_socket"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "The fake lives under tests/ and is written by the test_authoring task. The implementation task writes only the protocol in the package."
+    },
+    {
+      "id": "T-0027",
+      "type": "implementation",
+      "title": "Implement: runner protocol and deterministic fake runner",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-5",
+        "NFR-6",
+        "NFR-8"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0026"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/runner.py"
+        ],
+        "creatable_globs": [
+          "redgear/runner.py"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0026"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0028",
+      "type": "test_authoring",
+      "title": "Write failing tests: prompt_engine.py — deterministic prompt composition",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-4",
+        "FR-8",
+        "FR-9",
+        "NFR-3"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0003",
+        "T-0009"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Composing twice from identical state yields byte-identical output.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_prompt_engine.py::test_composition_deterministic"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Section order is fixed and empty sections render explicitly rather than vanishing.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_prompt_engine.py::test_section_order_and_empty_sections"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Frozen paths and the outcome contract appear in every task prompt.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_prompt_engine.py::test_scope_and_outcome_contract_always_present"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "A retry prompt contains the formatted failure excerpt from the prior attempt.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_prompt_engine.py::test_retry_includes_failure_excerpt"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "Untrusted content sits inside delimiters and embedded markers are escaped.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_prompt_engine.py::test_untrusted_delimiting_and_escaping"
+          }
+        },
+        {
+          "id": "AC-6",
+          "statement": "Terminal escapes are stripped and absolute paths rewritten as repository relative.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_prompt_engine.py::test_sanitisation_of_excerpts"
+          }
+        },
+        {
+          "id": "AC-7",
+          "statement": "Total prompt length never exceeds the configured character cap.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_prompt_engine.py::test_prompt_length_cap_enforced"
+          }
+        },
+        {
+          "id": "AC-8",
+          "statement": "Golden snapshots exist for first attempt, retry, both task types, and multi-rule cases.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_prompt_engine.py::test_golden_snapshots_match"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "HIGHEST RISK MODULE. Failures here are silent — a worse prompt only lowers the success rate. Snapshots are mandatory, not optional."
+    },
+    {
+      "id": "T-0029",
+      "type": "implementation",
+      "title": "Implement: prompt_engine.py — deterministic prompt composition",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-4",
+        "FR-8",
+        "FR-9",
+        "NFR-3"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0028"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0028"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0030",
+      "type": "test_authoring",
+      "title": "Write failing tests: orchestrator.py — the continuous execution loop",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-7",
+        "FR-8",
+        "NFR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0015",
+        "T-0017",
+        "T-0019",
+        "T-0025",
+        "T-0027",
+        "T-0029"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "A verified task advances the graph and the next ready task is selected immediately.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_orchestrator.py::test_pass_advances_and_continues"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "A failed task is re-selected and its retry prompt carries the failure excerpt.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_orchestrator.py::test_retry_carries_failure_forward"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "The retry path uses the same code path with no conditional branch in the loop.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_orchestrator.py::test_no_retry_special_case"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "A blocked outcome ends the run without consuming an attempt.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_orchestrator.py::test_blocked_ends_run_free"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "Attempt exhaustion escalates the task and ends the run as blocked.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_orchestrator.py::test_attempts_exhausted_escalates"
+          }
+        },
+        {
+          "id": "AC-6",
+          "statement": "Each termination reason maps to its documented distinct exit code.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_orchestrator.py::test_termination_reasons_and_exit_codes"
+          }
+        },
+        {
+          "id": "AC-7",
+          "statement": "Every prompt is persisted to disk before its dispatch is attempted.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_orchestrator.py::test_prompt_persisted_before_dispatch"
+          }
+        },
+        {
+          "id": "AC-8",
+          "statement": "Two consecutive unparseable results end the run as a runner error.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_orchestrator.py::test_parse_failure_twice_is_runner_error"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0031",
+      "type": "implementation",
+      "title": "Implement: orchestrator.py — the continuous execution loop",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-7",
+        "FR-8",
+        "NFR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0030"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0030"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0032",
+      "type": "test_authoring",
+      "title": "Write failing tests: cli.py — full command surface",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-10",
+        "FR-11",
+        "NFR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0031"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Initialisation refuses to run outside a git repository or over existing state.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_cli.py::test_init_preconditions"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "The run command refuses to start on an unapproved draft plan.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_cli.py::test_run_refuses_draft_plan"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "A dry run composes and prints every prompt while dispatching none.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_cli.py::test_dry_run_dispatches_nothing"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Rebuild detects a divergent projection and fails loudly without repairing it.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_cli.py::test_rebuild_fails_on_divergence"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "Status exit codes distinguish ready, all terminal, and escalated states.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_cli.py::test_status_exit_codes"
+          }
+        },
+        {
+          "id": "AC-6",
+          "statement": "Log output contains no credential value under any input.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_cli.py::test_log_output_redacted"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "SELF-HOSTING CROSSOVER. On completion of T-0033 redgear can execute its own remaining tasks. Everything up to here is driven manually."
+    },
+    {
+      "id": "T-0033",
+      "type": "implementation",
+      "title": "Implement: cli.py — full command surface",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-10",
+        "FR-11",
+        "NFR-2"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0032"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0032"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0034",
+      "type": "test_authoring",
+      "title": "Write failing tests: runner.py — Claude Code headless adapter",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-5",
+        "NFR-4",
+        "NFR-8"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0027"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Argument vectors are built as lists with the prompt as a discrete element.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_claude_adapter.py::test_argv_is_list_prompt_discrete"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Tool permission strings are generated from scope with correct prefix spacing.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_claude_adapter.py::test_permission_string_spacing"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "No configuration path can produce a permission-skipping flag.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_claude_adapter.py::test_skip_permissions_unreachable"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "A failure payload delivered on standard output with a zero exit code is detected.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_claude_adapter.py::test_failure_on_stdout_with_zero_exit"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "Parsing never asserts a specific nonzero exit code value.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_claude_adapter.py::test_no_specific_exit_code_assertions"
+          }
+        },
+        {
+          "id": "AC-6",
+          "statement": "A missing structured result triggers exactly one reminder retry.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_claude_adapter.py::test_single_reminder_retry"
+          }
+        },
+        {
+          "id": "AC-7",
+          "statement": "Raw output streams are persisted before parsing is attempted.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_claude_adapter.py::test_raw_persisted_before_parse"
+          }
+        },
+        {
+          "id": "AC-8",
+          "statement": "The environment is propagated without any credential value being read or logged.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_claude_adapter.py::test_env_propagated_never_inspected"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "All tests run against recorded fixture payloads. No test invokes the real CLI. Manual integration is a documented procedure, never CI."
+    },
+    {
+      "id": "T-0035",
+      "type": "implementation",
+      "title": "Implement: runner.py — Claude Code headless adapter",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-5",
+        "NFR-4",
+        "NFR-8"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0034"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0034"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0036",
+      "type": "test_authoring",
+      "title": "Write failing tests: planner.py — plan generation with mandatory approval gate",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-10"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0035",
+        "T-0033"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "The planning dispatch is granted read-only tools and cannot edit files.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_planner.py::test_planner_dispatch_is_read_only"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "A generated plan is written in draft state and is not executable.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_planner.py::test_generated_plan_is_draft"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "A plan with an implementation task lacking a test source is rejected.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_planner.py::test_orphan_implementation_rejected"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Approval records the approver and the specification hash at that moment.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_planner.py::test_approval_records_hash_and_approver"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "Editing the specification after approval invalidates it.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_planner.py::test_spec_edit_invalidates_approval"
+          }
+        },
+        {
+          "id": "AC-6",
+          "statement": "Validation failures are returned to the planner up to the retry cap then surfaced.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_planner.py::test_validation_retry_then_surface"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0037",
+      "type": "implementation",
+      "title": "Implement: planner.py — plan generation with mandatory approval gate",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-10"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0036"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0036"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0038",
+      "type": "test_authoring",
+      "title": "Write failing tests: api/app.py — read-only control plane API",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-12"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0015"
+      ],
+      "scope": {
+        "writable_globs": [
+          "tests/**"
+        ],
+        "creatable_globs": [
+          "tests/**"
+        ],
+        "frozen_globs": [
+          "redgear/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "Every response is derived from the event log or a projection rebuilt from it.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_api.py::test_all_responses_log_derived"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "No endpoint mutates task state other than a human approval action.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_api.py::test_no_state_mutation_endpoints"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Dispatched prompts are retrievable verbatim per iteration.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_api.py::test_prompts_retrievable_verbatim"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Proof artifacts including the raw diff are retrievable per attempt.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_api.py::test_proofs_retrievable_per_attempt"
+          }
+        },
+        {
+          "id": "AC-5",
+          "statement": "No response body contains a credential value.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "tests/test_api.py::test_responses_redacted"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0039",
+      "type": "implementation",
+      "title": "Implement: api/app.py — read-only control plane API",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-12"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0038"
+      ],
+      "scope": {
+        "writable_globs": [
+          "redgear/**"
+        ],
+        "creatable_globs": [
+          "redgear/**"
+        ],
+        "frozen_globs": [
+          "tests/**",
+          "pyproject.toml",
+          ".github/**"
+        ]
+      },
+      "acceptance_criteria": [],
+      "inherits_criteria_from": [
+        "T-0038"
+      ],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null
+    },
+    {
+      "id": "T-0040",
+      "type": "scaffold",
+      "title": "Control plane user interface",
+      "state": "blocked",
+      "spec_refs": [
+        "FR-12"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0039"
+      ],
+      "scope": {
+        "writable_globs": [
+          "ui/**"
+        ],
+        "creatable_globs": [
+          "ui/**"
+        ],
+        "frozen_globs": []
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "The dashboard builds cleanly and renders the graph, prompts, diffs, and proofs.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::ui_builds_and_renders"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "The interface issues no request to any endpoint that mutates task state.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::ui_read_only"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "SCAFFOLD type: front-end build, verified by build success and manual render check."
+    },
+    {
+      "id": "T-0041",
+      "type": "scaffold",
+      "title": "Packaging and release readiness",
+      "state": "blocked",
+      "spec_refs": [
+        "NFR-1",
+        "NFR-9",
+        "NFR-10"
+      ],
+      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "depends_on": [
+        "T-0037",
+        "T-0040"
+      ],
+      "scope": {
+        "writable_globs": [
+          "pyproject.toml",
+          ".github/**",
+          "README.md",
+          "docs/**"
+        ],
+        "creatable_globs": [
+          "pyproject.toml",
+          ".github/**",
+          "README.md",
+          "docs/**"
+        ],
+        "frozen_globs": []
+      },
+      "acceptance_criteria": [
+        {
+          "id": "AC-1",
+          "statement": "The built artifact contains no credential file and its manifest is reviewed.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::wheel_manifest_clean"
+          }
+        },
+        {
+          "id": "AC-2",
+          "statement": "Secret scanning over full history reports nothing.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::gitleaks_history_clean"
+          }
+        },
+        {
+          "id": "AC-3",
+          "statement": "Egress grep gates report zero matches across the package.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::no_network_or_credential_reads"
+          }
+        },
+        {
+          "id": "AC-4",
+          "statement": "Isolated installation from the artifact yields a working command on a clean machine.",
+          "verified_by": {
+            "kind": "test",
+            "selector": "smoke::isolated_install_works"
+          }
+        }
+      ],
+      "inherits_criteria_from": [],
+      "attempts": 0,
+      "max_attempts": 3,
+      "claim": null,
+      "prior_attempts": [],
+      "verified_at": null,
+      "proof_id": null,
+      "escalation": null,
+      "note": "SCAFFOLD type: release verification, no coverage gate."
+    }
+  ],
+  "edges": [
+    {
+      "from": "T-0001",
+      "to": "T-0002",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0002",
+      "to": "T-0003",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0003",
+      "to": "T-0004",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0004",
+      "to": "T-0005",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0005",
+      "to": "T-0006",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0006",
+      "to": "T-0007",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0001",
+      "to": "T-0008",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0008",
+      "to": "T-0009",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0007",
+      "to": "T-0010",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0010",
+      "to": "T-0011",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0011",
+      "to": "T-0012",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0012",
+      "to": "T-0013",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0013",
+      "to": "T-0014",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0014",
+      "to": "T-0015",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0005",
+      "to": "T-0016",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0016",
+      "to": "T-0017",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0005",
+      "to": "T-0018",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0018",
+      "to": "T-0019",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0005",
+      "to": "T-0020",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0020",
+      "to": "T-0021",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0021",
+      "to": "T-0022",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0007",
+      "to": "T-0022",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0022",
+      "to": "T-0023",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0023",
+      "to": "T-0024",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0024",
+      "to": "T-0025",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0003",
+      "to": "T-0026",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0026",
+      "to": "T-0027",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0003",
+      "to": "T-0028",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0009",
+      "to": "T-0028",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0028",
+      "to": "T-0029",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0015",
+      "to": "T-0030",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0017",
+      "to": "T-0030",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0019",
+      "to": "T-0030",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0025",
+      "to": "T-0030",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0027",
+      "to": "T-0030",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0029",
+      "to": "T-0030",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0030",
+      "to": "T-0031",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0031",
+      "to": "T-0032",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0032",
+      "to": "T-0033",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0027",
+      "to": "T-0034",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0034",
+      "to": "T-0035",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0035",
+      "to": "T-0036",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0033",
+      "to": "T-0036",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0036",
+      "to": "T-0037",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0015",
+      "to": "T-0038",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0038",
+      "to": "T-0039",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0039",
+      "to": "T-0040",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0037",
+      "to": "T-0041",
+      "kind": "hard"
+    },
+    {
+      "from": "T-0040",
+      "to": "T-0041",
+      "kind": "hard"
+    }
+  ]
+}

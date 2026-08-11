@@ -1,0 +1,319 @@
+{
+  "schema_version": 1,
+  "spec_id": "spec-dd2914",
+  "hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+  "created_at": "2026-08-11T00:00:00Z",
+  "supersedes": null,
+  "project": {
+    "name": "redgear",
+    "root_globs": [
+      "redgear/**",
+      "tests/**",
+      "ui/**"
+    ]
+  },
+  "requirements": [
+    {
+      "id": "FR-1",
+      "kind": "functional",
+      "statement": "Project state is recorded as an append-only event log that is the single source of truth, from which all derived views are reconstructible.",
+      "rationale": "Auditability is the product. A projection that cannot be rebuilt from its log is a claim, not a record.",
+      "acceptance": [
+        "Every state transition appends exactly one line to .redgear/events.jsonl.",
+        "Replaying the log from line 0 reproduces task_graph.json byte-identically.",
+        "Event sequence numbers are gapless and strictly monotonic.",
+        "A gap or repeat in sequence numbers is reported as corruption and never auto-repaired."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-2",
+      "kind": "functional",
+      "statement": "Work is modelled as a directed acyclic graph of tasks whose readiness is gated by verified dependencies.",
+      "rationale": "Ordering is a correctness property, not a convenience. A task that runs before its dependency is verified produces work built on unproven foundations.",
+      "acceptance": [
+        "A task is ready if and only if every hard dependency is in state verified.",
+        "A cycle in the edge set is rejected with the offending cycle named.",
+        "Every depends_on entry and edge endpoint refers to an existing node.",
+        "Readiness is recomputed after every transition and never cached across writes."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-3",
+      "kind": "functional",
+      "statement": "Test authoring and implementation are separate task types with mutually exclusive write scopes, enforced by SHA-256 hashing of frozen paths.",
+      "rationale": "An agent that can edit both the tests and the code they check is grading its own homework. The hash is what makes the separation mechanical rather than advisory.",
+      "acceptance": [
+        "At claim time a SHA-256 digest is recorded for every file matching the task frozen globs.",
+        "Any modification, addition, or deletion inside a frozen glob fails verification before lint or tests run.",
+        "An implementation task carries no acceptance criteria of its own and inherits them from a verified test_authoring task.",
+        "Writable globs and frozen globs never overlap over the repository tracked file list."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-4",
+      "kind": "functional",
+      "statement": "Task prompts are composed deterministically from task state by a pure function with no I/O, clock, or randomness.",
+      "rationale": "The prompt is the entire interface between orchestrator knowledge and agent action. If it is not reproducible it cannot be reviewed, snapshotted, or debugged.",
+      "acceptance": [
+        "Composing a prompt twice from identical state yields byte-identical output.",
+        "Section order is fixed and empty sections render as an explicit none rather than being omitted.",
+        "The prompt includes task identity, acceptance criteria, writable and frozen scope, applicable rules, the verification contract, and the outcome contract.",
+        "A retry prompt contains the formatted failure excerpt from the previous attempt.",
+        "Total prompt length never exceeds the configured character cap."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-5",
+      "kind": "functional",
+      "statement": "Prompts are dispatched to an external coding agent CLI in non-interactive mode as a subprocess, with tool permissions constrained to the task scope.",
+      "rationale": "Delegating execution keeps the orchestrator free of model credentials and lets the same engine drive any conforming CLI.",
+      "acceptance": [
+        "Dispatch spawns the agent CLI with the prompt as an argv element, never interpolated into a shell string.",
+        "Allowed tools are derived from task scope and never include an unrestricted shell permission.",
+        "Permission-skipping flags are never passed under any configuration.",
+        "The exact argv is persisted for every dispatch with credential values redacted.",
+        "Standard output and standard error are captured to disk before parsing is attempted."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-6",
+      "kind": "functional",
+      "statement": "Completed work is verified by six ordered gates computed locally by the orchestrator, short-circuiting on the first failure.",
+      "rationale": "A verdict derived from anything the agent said is not a verdict. Only files and exit codes count.",
+      "acceptance": [
+        "Gates run in the order scope, frozen hash, lint, tests, criteria coverage, coverage delta.",
+        "Gates after a failure are recorded as skipped and never omitted from the proof.",
+        "The changed file set is computed from git independently of any agent claim.",
+        "A mismatch between the agent declared file list and the real diff fails the scope gate.",
+        "For test authoring tasks the test gate passes only when the target tests fail.",
+        "Coverage is measured against changed lines only, never the whole repository."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-7",
+      "kind": "functional",
+      "statement": "The orchestrator runs a continuous select, compose, dispatch, verify, decide loop until a defined terminal condition is reached.",
+      "rationale": "Removing the human from the message relay is the entire point of the product.",
+      "acceptance": [
+        "A verified task advances the graph and the loop immediately selects the next ready task.",
+        "A failed task returns to ready and is re-selected, producing a corrective prompt from the recorded failure.",
+        "The retry path uses the same code path as the first attempt with no conditional branch in the loop.",
+        "The loop terminates on exactly one of complete, stopped, blocked, budget exhausted, runner error, or engine error.",
+        "The termination reason is recorded and mapped to a distinct process exit code."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-8",
+      "kind": "functional",
+      "statement": "The agent can declare itself blocked or under-scoped, which pauses the run for human intervention without consuming an attempt.",
+      "rationale": "An agent whose only outcomes are pass and fail-and-retry is structurally incentivised to fake a pass when stuck. Honesty has to be free.",
+      "acceptance": [
+        "The required structured result offers completed, blocked, and scope_insufficient as outcomes.",
+        "A blocked or scope_insufficient outcome leaves the attempt counter unchanged.",
+        "The prompt states explicitly that honest exit carries no penalty.",
+        "A blocked outcome ends the run with a distinct status and is never logged or displayed as a failure."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-9",
+      "kind": "functional",
+      "statement": "Architecture decisions are recorded as immutable records carrying a machine-obeyable rule and a path scope, and matching rules are injected into future task prompts.",
+      "rationale": "Decisions that live only in prose are documentation nobody reads. A rule bound to a path glob is a constraint the engine can enforce.",
+      "acceptance": [
+        "An accepted record is never edited; a change is expressed by a new record that supersedes it.",
+        "Each record carries a single imperative rule sentence and at least one path glob.",
+        "Rules whose globs intersect a task writable scope appear verbatim in that task prompt.",
+        "A rule containing hedging language is rejected at validation time."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-10",
+      "kind": "functional",
+      "statement": "A project plan is generated from a raw requirements document by a read-only agent dispatch, and cannot be executed until a human approves it.",
+      "rationale": "The plan defines the tests, so a wrong plan produces confidently verified wrong software. It is the only unverified model output in the system and must be gated by a person.",
+      "acceptance": [
+        "The planning dispatch is granted read-only tools and can never edit files.",
+        "A generated plan is written in draft state and the run command refuses to start on a draft plan.",
+        "Approval records the approver and the specification hash at time of approval.",
+        "Editing the specification after approval invalidates approval and requires re-approval.",
+        "Plan and run are separate commands with no flag that fuses them."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-11",
+      "kind": "functional",
+      "statement": "A command line interface exposes initialisation, planning, approval, running, status, stopping, manual verification, projection rebuild, log inspection, and environment diagnosis.",
+      "rationale": "The tool is distributed as a CLI; the command surface is the product boundary.",
+      "acceptance": [
+        "Initialisation scaffolds the state directory and refuses to run outside a git repository.",
+        "Status reports task identity, type, state, attempt count, and blocking dependencies.",
+        "A dry run composes and prints every prompt without dispatching any of them.",
+        "Rebuild replays the log, compares against the on-disk projection, and fails loudly on divergence.",
+        "Diagnosis reports agent CLI version, harness command availability, and git cleanliness."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "FR-12",
+      "kind": "functional",
+      "statement": "A local read-only control plane renders the task graph, dispatched prompts, diffs, and verification proofs derived solely from the event log.",
+      "rationale": "A reviewer must be able to see exactly what the orchestrator saw. A view that can display something the log does not support is not an audit trail.",
+      "acceptance": [
+        "Every displayed fact is derived from the event log or a projection rebuilt from it.",
+        "The interface exposes no endpoint that mutates task state other than human approval actions.",
+        "Prompts are viewable verbatim as dispatched.",
+        "Verification proofs are viewable per task attempt including the raw diff."
+      ],
+      "priority": "should"
+    },
+    {
+      "id": "NFR-1",
+      "kind": "non_functional",
+      "statement": "The orchestrator never calls a model API, never holds or reads a credential, and never opens a network socket.",
+      "rationale": "This is what keeps the tool free to run, distributable without billing concerns, and safe to point at a private repository.",
+      "acceptance": [
+        "No model provider client library appears in the dependency set.",
+        "No source file under the package reads an authentication environment variable.",
+        "No source file under the package imports a network client or socket module.",
+        "The parent environment may be propagated to the agent subprocess without being inspected.",
+        "Any value matching a credential-like name is redacted from every log line and event record."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-2",
+      "kind": "non_functional",
+      "statement": "Every unattended run is bounded by hard caps and interruptible by an out-of-band stop signal.",
+      "rationale": "An autonomous loop with file write and shell access and no ceiling is a dangerous object regardless of intent.",
+      "acceptance": [
+        "Iteration count, wall clock duration, consecutive failure count, and per-dispatch turn count are all capped.",
+        "Caps are checked before each iteration begins and never mid-turn.",
+        "A stop sentinel file ends the run cleanly at the next iteration boundary.",
+        "Interrupt signals abort the current turn, terminate the agent process tree, and release all locks.",
+        "No termination path leaves an orphaned lock file."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-3",
+      "kind": "non_functional",
+      "statement": "Content originating outside the trusted plan is contained within explicit delimiters and never treated as instruction.",
+      "rationale": "Harness output can contain arbitrary text from any dependency in the tree, and it is being fed to an agent holding file write and shell permissions.",
+      "acceptance": [
+        "Harness output, diff content, and source documents appear only inside labelled delimiters in the prompt body.",
+        "Delimiter markers occurring inside the content itself are escaped.",
+        "Untrusted content never reaches a system prompt append, a tool permission string, or any subprocess argument.",
+        "Terminal escape sequences are stripped and absolute paths are rewritten as repository-relative."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-4",
+      "kind": "non_functional",
+      "statement": "All subprocess execution uses argument vectors without a shell, with timeouts, and with a scrubbed environment for harness commands.",
+      "rationale": "Command injection through a prompt or a test name would compromise the machine running the loop.",
+      "acceptance": [
+        "No call site enables shell interpretation.",
+        "Harness command vectors originate from configuration and never incorporate agent-supplied values.",
+        "Harness subprocesses receive an allowlisted environment that excludes credentials.",
+        "Every subprocess call has a timeout and a timeout is a recorded failure rather than an unhandled exception.",
+        "Timeouts terminate the whole process tree, not only the direct child."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-5",
+      "kind": "non_functional",
+      "statement": "The codebase is fully type annotated and passes strict static type checking.",
+      "rationale": "This is state-machine and parsing code where a type error is a corruption bug.",
+      "acceptance": [
+        "Strict mode type checking passes across the package with no error suppressions.",
+        "No unparameterised container types and no dynamic escape hatches outside the canonical encoder.",
+        "Every external boundary parses into a validated model before use."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-6",
+      "kind": "non_functional",
+      "statement": "The test suite is deterministic, requires no model, no agent CLI, and no network, and completes within ninety seconds.",
+      "rationale": "A suite that needs a credential stops working the moment someone else clones the repository, and a suite that calls a model is not reproducible.",
+      "acceptance": [
+        "No test invokes a real agent CLI or a model endpoint under any marker or condition.",
+        "Agent behaviour is simulated by a deterministic substitute that applies canned changes.",
+        "Verification gate tests run against a real git repository rather than mocked subprocess calls.",
+        "The full suite completes within ninety seconds on a standard development machine."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-7",
+      "kind": "non_functional",
+      "statement": "All state file writes are atomic and no partially written state is ever observable.",
+      "rationale": "A crash mid-write that leaves a truncated projection destroys the audit trail the product exists to provide.",
+      "acceptance": [
+        "Every state file write goes to a temporary path, is flushed to disk, then atomically replaced.",
+        "The event log is opened in append mode and flushed before the appending call returns.",
+        "A proof directory is considered complete only when its verdict file is present."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-8",
+      "kind": "non_functional",
+      "statement": "Agent CLI specifics are confined to a single adapter module behind a stable protocol.",
+      "rationale": "Third-party CLI flags change between releases; coupling the loop to one vendor's surface guarantees breakage.",
+      "acceptance": [
+        "The orchestrator and prompt composer are typed against a protocol and import no concrete adapter.",
+        "No module outside the adapter branches on which agent CLI is in use.",
+        "Each adapter records the CLI version it was verified against."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-9",
+      "kind": "non_functional",
+      "statement": "The project maintains at least eighty-five percent line coverage over its own package.",
+      "rationale": "A verification engine with poor self-coverage is not credible.",
+      "acceptance": [
+        "Coverage measured over the package meets or exceeds eighty-five percent.",
+        "The coverage threshold is enforced in continuous integration as a hard failure."
+      ],
+      "priority": "must"
+    },
+    {
+      "id": "NFR-10",
+      "kind": "non_functional",
+      "statement": "The tool targets Python 3.11 and above and installs as an isolated command line application.",
+      "rationale": "Distribution as a single global command is the expected shape for a developer tool.",
+      "acceptance": [
+        "The package declares a minimum Python version of 3.11.",
+        "Isolated installation from a built artifact yields a working command on a clean machine.",
+        "Packaging metadata is declared in the project file with no legacy setup script."
+      ],
+      "priority": "must"
+    }
+  ],
+  "out_of_scope": [
+    "Auto-committing, pushing, opening pull requests, merging, or deploying on behalf of the user",
+    "Concurrent or parallel agent execution across multiple tasks",
+    "Fully unattended planning without a human approval gate",
+    "Harness support for languages other than Python",
+    "Hosted, remote, or multi-tenant execution",
+    "Model routing, prompt-to-API calls, or any direct inference by the orchestrator",
+    "Sandboxing beyond subprocess isolation and tool permission allowlists",
+    "Authentication, user accounts, or role-based access control",
+    "Cost accounting presented as authoritative billing rather than estimate",
+    "Automatic recovery or repair of a divergent projection"
+  ]
+}

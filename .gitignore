@@ -1,0 +1,36 @@
+# .redgear/ is the audit trail and is intentionally NOT ignored -- it belongs
+# in version control. Only its scratch subdirectory is transient.
+.redgear/tmp/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+
+# Test / coverage / type-checking artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.json
+htmlcov/
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Secrets -- never commit these
+.env
+*.pem
+*.key
+
+# UI (Next.js) build output
+ui/node_modules/
+ui/.next/

@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  format:
+    name: ruff format
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: ruff format --check .
+
+  lint:
+    name: ruff check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: ruff check .
+
+  types:
+    name: mypy --strict
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e ".[dev]"
+      - run: mypy
+
+  test:
+    name: pytest (${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: pip install -e ".[dev]"
+      - run: pytest -q --cov=redgear --cov-report=term-missing --cov-fail-under=85
+
+  secrets-and-egress:
+    name: G5 secret & egress hygiene
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: No credential env var reads under redgear/
+        run: |
+          set -euo pipefail
+          if grep -rnE "ANTHROPIC_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY" redgear/; then
+            echo "::error::Credential environment variable referenced under redgear/ -- forbidden by G5"
+            exit 1
+          fi
+          echo "No credential env var references found."
+      - name: No network client imports under redgear/
+        run: |
+          set -euo pipefail
+          if grep -rnE "^\s*(import|from)\s+(httpx|urllib|socket|requests)\b" redgear/; then
+            echo "::error::Network client import under redgear/ -- forbidden by G5"
+            exit 1
+          fi
+          echo "No network client imports found."

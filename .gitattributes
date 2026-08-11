@@ -1,2 +1,12 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Auto detect text files and perform LF normalization.
+# eol=lf is forced (not left to core.autocrlf) so text files always check out
+# with LF on every platform, including Windows -- ruff format and other tools
+# that are sensitive to line endings must see a consistent result regardless
+# of the local git config.
+* text=auto eol=lf
+*.py text eol=lf
+*.toml text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.json text eol=lf
+*.md text eol=lf
