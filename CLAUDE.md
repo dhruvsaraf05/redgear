@@ -629,6 +629,68 @@ Never push a `test_authoring` commit directly to main. If it happens, the correc
 fix is to complete the paired implementation task, not to disable a gate or mark
 a test xfail.
 
+### 4.7 Error codes — normative and closed
+
+Every failure the engine surfaces to an agent, a CLI user, or the control plane
+carries one of these codes. **The list is closed.** Adding one is an ADR-worthy
+change, because `errors.py` is the single import point for every other module.
+
+All codes are subclasses of `RedgearError`, carry `code` as a class attribute,
+and carry a structured `detail` mapping — never a bare message string (§11.2
+rule 4). Tools serialise these; they never let a traceback escape.
+
+**Plan and spec**
+
+| Code | Raised when | Correct response |
+| --- | --- | --- |
+| `E_PLAN_UNREVIEWED` | `run` invoked on a `draft` graph (§3.3) | Human approves the plan |
+| `E_SPEC_DRIFT` | A task's stored `spec_hash` differs from current (§3.5) | Stop; human re-plans |
+| `E_PLAN_INVALID` | A generated plan fails a §4.4 invariant | Re-plan, up to the retry cap |
+
+**Graph and state**
+
+| Code | Raised when | Correct response |
+| --- | --- | --- |
+| `E_GRAPH_CYCLE` | The edge set is not acyclic (§4.4 inv. 1) | Stop; bad graph or engine bug |
+| `E_GRAPH_INVALID` | A §4.4 invariant other than acyclicity fails | Stop; bad graph |
+| `E_SCOPE_CONTRADICTION` | Writable and frozen globs overlap (§4.4 inv. 7) | Stop; bad graph |
+| `E_TASK_STATE` | An illegal transition for the current state (§4.2) | Re-read task state |
+| `E_NO_READY_TASK` | No claimable task exists | Run ends `complete_or_blocked` |
+| `E_ATTEMPTS_EXHAUSTED` | The attempt budget is spent | Task escalates; run ends |
+
+**Locking and concurrency**
+
+| Code | Raised when | Correct response |
+| --- | --- | --- |
+| `E_RUN_LOCKED` | A second run starts while the run lock is held | Wait, or stop the other run |
+| `E_INVALID_CLAIM` | A claim token is unknown or mismatched | Re-claim |
+| `E_LEASE_EXPIRED` | The lease elapsed before verification (§8.3) | Re-claim; work may need redoing |
+
+**Repository and environment**
+
+| Code | Raised when | Correct response |
+| --- | --- | --- |
+| `E_DIRTY_TREE` | Uncommitted changes at claim time (§8.4) | Human commits or stashes |
+| `E_NOT_A_REPO` | The target directory is not a git repository | Run from a repository root |
+| `E_HARNESS_ERROR` | A harness command failed to launch (§7.3) | Report as environment failure |
+
+**Runner**
+
+| Code | Raised when | Correct response |
+| --- | --- | --- |
+| `E_RUNNER_ERROR` | Two consecutive unparseable results (§6.4) | Run ends; integration bug |
+| `E_RUNNER_TIMEOUT` | A dispatch exceeded its wall clock (§6.5) | Counted as a failed attempt |
+
+**Audit integrity**
+
+| Code | Raised when | Correct response |
+| --- | --- | --- |
+| `E_LOG_CORRUPT` | A gap or repeat in event `seq` (FR-1) | Stop; never auto-repair |
+| `E_PROJECTION_DIVERGED` | Rebuild differs from the on-disk projection | Stop; surface loudly (G4) |
+
+Eighteen codes. If a needed failure has no code here, that is a contract gap —
+report it rather than inventing a code.
+
 ---
 
 ## 5. The prompt engine
