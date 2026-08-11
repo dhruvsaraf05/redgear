@@ -19,21 +19,31 @@
       "scope": {
         "writable_globs": [
           "pyproject.toml",
+          ".gitignore",
+          ".gitattributes",
           ".pre-commit-config.yaml",
           ".github/**",
           "LICENSE",
           "README.md",
           "redgear/__init__.py",
-          "tests/conftest.py"
+          "redgear/py.typed",
+          "tests/conftest.py",
+          "tests/test_smoke.py",
+          "docs/**"
         ],
         "creatable_globs": [
           "pyproject.toml",
+          ".gitignore",
+          ".gitattributes",
           ".pre-commit-config.yaml",
           ".github/**",
           "LICENSE",
           "README.md",
           "redgear/__init__.py",
-          "tests/conftest.py"
+          "redgear/py.typed",
+          "tests/conftest.py",
+          "tests/test_smoke.py",
+          "docs/**"
         ],
         "frozen_globs": []
       },

@@ -21,19 +21,28 @@ ones:
   (``class Budget(Frozen):`` section 8.1, ``class TurnResult(Frozen):``
   section 6.4), so it must exist in schemas.py with that exact name.
   ``frozen=True, extra="forbid"``.
-* The **event taxonomy** (AC-3) is the biggest open question in this file.
-  CLAUDE.md never enumerates the full set of event types -- only
-  ``plan_approved`` (section 3.3) and ``run_aborted`` (section 8.3 / G6) are
-  named explicitly, plus ``run_ended`` (section 4.3). The other seven
-  event types below (``run_started``, ``task_claimed``,
+* The **event taxonomy** (AC-3) is now closed at 14 types per CLAUDE.md
+  section 3.6, added after this file's first draft flagged the taxonomy as
+  the biggest open question. The original 10 (``run_started``,
+  ``run_ended``, ``run_aborted``, ``plan_approved``, ``task_claimed``,
   ``prompt_dispatched``, ``turn_completed``, ``task_verified``,
-  ``task_rejected``, ``task_escalated``) are inferred from the task state
-  machine (section 4.2) and from G4's "every state transition ... appends
-  exactly one event" / "every prompt ... persisted" / "every turn result
-  appends exactly one line". This is a reasonable, citable minimum, not a
-  confirmed final taxonomy -- events.py (T-0010/T-0011) and state_engine.py
-  (T-0014/T-0015) are the modules that actually need this list to be
-  right, and it should be re-confirmed before those land.
+  ``task_rejected``, ``task_escalated``) were confirmed correct; four were
+  added: ``plan_generated`` (section 3.2 -- planning writes spec.json +
+  task_graph.json in state draft, distinct from the later approval),
+  ``spec_updated`` (section 12.1 -- editing spec.json changes the hash and
+  marks descendants ``spec_drift``), ``lease_expired`` (section 10.5's
+  ``expired_lease_reaped`` scenario / T-0016 AC-2), and ``adr_logged``
+  (FR-9 -- an ADR record carries a rule and path globs; section 2.2's
+  ``adrs/index.json``). There is deliberately no ``scope_change`` event
+  pair; section 3.6's own text (not reproduced here -- this file was
+  written from the task instruction naming the omission, not from section
+  3.6's literal wording) is the authority on why. This file never assumed
+  one, so there was nothing to remove.
+  Field-level shapes for the four additions are this file's own
+  construction, grounded in the citations above; re-confirm against
+  section 3.6's literal text once it is available verbatim, the same way
+  the original 10's shapes should be re-confirmed before events.py
+  (T-0010/T-0011) and state_engine.py (T-0014/T-0015) land.
 * ``Claim`` fields (``base_commit``, ``frozen_hashes``, ``allowed_tools``,
   ``claimed_at``) come directly from the section 4.1 loop pseudocode
   comment ("base_commit + frozen hashes") and from
@@ -64,6 +73,7 @@ import pytest
 from pydantic import ValidationError
 from redgear.schemas import (
     AcceptanceCriterion,
+    AdrLoggedEvent,
     Budget,
     Claim,
     Edge,
@@ -73,7 +83,9 @@ from redgear.schemas import (
     GateName,
     GateResult,
     GateStatus,
+    LeaseExpiredEvent,
     PlanApprovedEvent,
+    PlanGeneratedEvent,
     Project,
     PromptDispatchedEvent,
     Proof,
@@ -83,6 +95,7 @@ from redgear.schemas import (
     RunStartedEvent,
     Scope,
     Spec,
+    SpecUpdatedEvent,
     TaskClaimedEvent,
     TaskEscalatedEvent,
     TaskGraph,
@@ -271,6 +284,38 @@ TASK_ESCALATED_EXAMPLE: dict[str, Any] = {
     "reason": "attempts_exhausted",
 }
 
+PLAN_GENERATED_EXAMPLE: dict[str, Any] = {
+    "event": "plan_generated",
+    "seq": 0,
+    "ts": "2026-08-11T00:00:00Z",
+    "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+    "task_count": 41,
+}
+
+SPEC_UPDATED_EXAMPLE: dict[str, Any] = {
+    "event": "spec_updated",
+    "seq": 50,
+    "ts": "2026-08-12T00:00:00Z",
+    "old_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+    "new_hash": "sha256:" + "b" * 64,
+}
+
+LEASE_EXPIRED_EXAMPLE: dict[str, Any] = {
+    "event": "lease_expired",
+    "seq": 51,
+    "ts": "2026-08-12T00:05:00Z",
+    "task_id": "T-0007",
+}
+
+ADR_LOGGED_EXAMPLE: dict[str, Any] = {
+    "event": "adr_logged",
+    "seq": 52,
+    "ts": "2026-08-12T00:10:00Z",
+    "adr_id": "ADR-0007",
+    "rule": "Store money as integer minor units; never a float.",
+    "applies_to": ["redgear/ledger/**"],
+}
+
 CLAIM_EXAMPLE: dict[str, Any] = {
     "base_commit": "8ac1471000000000000000000000000000000a",
     "frozen_hashes": {"tests/test_schemas.py": "a" * 64},
@@ -349,6 +394,10 @@ def _cases(
         ("TaskVerifiedEvent", TaskVerifiedEvent, TASK_VERIFIED_EXAMPLE),
         ("TaskRejectedEvent", TaskRejectedEvent, TASK_REJECTED_EXAMPLE),
         ("TaskEscalatedEvent", TaskEscalatedEvent, TASK_ESCALATED_EXAMPLE),
+        ("PlanGeneratedEvent", PlanGeneratedEvent, PLAN_GENERATED_EXAMPLE),
+        ("SpecUpdatedEvent", SpecUpdatedEvent, SPEC_UPDATED_EXAMPLE),
+        ("LeaseExpiredEvent", LeaseExpiredEvent, LEASE_EXPIRED_EXAMPLE),
+        ("AdrLoggedEvent", AdrLoggedEvent, ADR_LOGGED_EXAMPLE),
     ]
 
 
@@ -383,13 +432,17 @@ def test_extra_forbid_and_frozen(real_spec: dict[str, Any], real_graph: dict[str
 
     # Frozen models: CLAUDE.md pseudocodes `class Budget(Frozen)` (section 8.1)
     # and `class TurnResult(Frozen)` (section 6.4) verbatim. Event records are
-    # append-only by G4 and are treated as frozen here for the same reason.
+    # append-only by G4 and are treated as frozen here for the same reason --
+    # every one of the 14 event types (section 3.6) is checked, not a sample.
     frozen_cases: list[tuple[str, type, dict[str, Any]]] = [
         ("Budget", Budget, BUDGET_EXAMPLE),
         ("TurnResult", TurnResult, TURN_RESULT_EXAMPLE),
-        ("RunStartedEvent", RunStartedEvent, RUN_STARTED_EXAMPLE),
-        ("TaskClaimedEvent", TaskClaimedEvent, TASK_CLAIMED_EXAMPLE),
+        *(
+            (discriminator, EVENT_CLASSES_BY_DISCRIMINATOR[discriminator], payload)
+            for discriminator, payload in EVENT_EXAMPLES
+        ),
     ]
+    assert len(frozen_cases) == 2 + 14
     for label, model_cls, data in frozen_cases:
         instance = model_cls.model_validate(data)
         assert isinstance(instance, Frozen), f"{label}: does not inherit from Frozen"
@@ -418,6 +471,10 @@ EVENT_EXAMPLES: list[tuple[str, dict[str, Any]]] = [
     ("task_verified", TASK_VERIFIED_EXAMPLE),
     ("task_rejected", TASK_REJECTED_EXAMPLE),
     ("task_escalated", TASK_ESCALATED_EXAMPLE),
+    ("plan_generated", PLAN_GENERATED_EXAMPLE),
+    ("spec_updated", SPEC_UPDATED_EXAMPLE),
+    ("lease_expired", LEASE_EXPIRED_EXAMPLE),
+    ("adr_logged", ADR_LOGGED_EXAMPLE),
 ]
 
 EVENT_CLASSES_BY_DISCRIMINATOR: dict[str, type] = {
@@ -431,6 +488,10 @@ EVENT_CLASSES_BY_DISCRIMINATOR: dict[str, type] = {
     "task_verified": TaskVerifiedEvent,
     "task_rejected": TaskRejectedEvent,
     "task_escalated": TaskEscalatedEvent,
+    "plan_generated": PlanGeneratedEvent,
+    "spec_updated": SpecUpdatedEvent,
+    "lease_expired": LeaseExpiredEvent,
+    "adr_logged": AdrLoggedEvent,
 }
 
 
@@ -441,7 +502,8 @@ def test_event_union_discriminates() -> None:
 
     adapter: TypeAdapter[Any] = TypeAdapter(Event)
 
-    assert len(EVENT_EXAMPLES) == len(EVENT_CLASSES_BY_DISCRIMINATOR), (
+    assert len(EVENT_EXAMPLES) == len(EVENT_CLASSES_BY_DISCRIMINATOR) == 14, (
+        "CLAUDE.md section 3.6 closes the event taxonomy at 14 types; "
         "every event type must have exactly one example"
     )
 

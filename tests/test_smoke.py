@@ -297,6 +297,40 @@ def test_two_phase_tdd_holds(graph: dict[str, Any]) -> None:
             assert node["acceptance_criteria"], node["id"]
 
 
+SCAFFOLD_REDGEAR_MARKER_EXCEPTIONS = frozenset({"redgear/__init__.py", "redgear/py.typed"})
+
+
+@pytest.mark.smoke
+def test_scaffold_never_writes_behavioral_redgear_code(graph: dict[str, Any]) -> None:
+    """CLAUDE.md section 4.5: "A scaffold task may never write under
+    redgear/**. Package code is behaviour and goes through the two-phase
+    pattern without exception." T-0001 is the sole exception in practice,
+    and only for two zero-logic marker files: the __init__.py version
+    marker and the py.typed marker. Anything else under redgear/** on a
+    scaffold node's writable/creatable globs would be smuggling behavioral
+    code past the two-phase gate.
+    """
+    for node in graph["nodes"]:
+        if node["type"] != "scaffold":
+            continue
+        for glob_list_name in ("writable_globs", "creatable_globs"):
+            for pattern in node["scope"][glob_list_name]:
+                if pattern == "redgear/**" or (pattern.startswith("redgear/") and "*" in pattern):
+                    pytest.fail(
+                        f"{node['id']}.{glob_list_name}: {pattern!r} grants scaffold "
+                        "write access to a redgear/** wildcard, not just a marker file"
+                    )
+                if (
+                    pattern.startswith("redgear/")
+                    and pattern not in SCAFFOLD_REDGEAR_MARKER_EXCEPTIONS
+                ):
+                    allowed = sorted(SCAFFOLD_REDGEAR_MARKER_EXCEPTIONS)
+                    pytest.fail(
+                        f"{node['id']}.{glob_list_name}: {pattern!r} is not one of the "
+                        f"documented marker-file exceptions {allowed}"
+                    )
+
+
 def _expand_globs_to_candidates(globs: list[str]) -> set[str]:
     candidates: set[str] = set()
     for pattern in globs:
