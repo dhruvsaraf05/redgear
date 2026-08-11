@@ -46,7 +46,7 @@ redgear enforces discipline on an autonomous agent. This file enforces the same 
 - **PyPI / import / CLI name:** `redgear`
 - **One-line description:** An autonomous orchestrator that plans software projects, generates task prompts, drives a coding agent CLI in a continuous verified loop, and refuses to accept unproven work.
 - **License:** MIT
-- **Minimum Python:** 3.11
+- **Minimum Python:** 3.12
 
 ### 1.2 Core problem
 
@@ -639,6 +639,12 @@ All codes are subclasses of `RedgearError`, carry `code` as a class attribute,
 and carry a structured `detail` mapping — never a bare message string (§11.2
 rule 4). Tools serialise these; they never let a traceback escape.
 
+This table is the closed *design*. `errors.py` implements a code when the
+module that raises it lands, and `ERROR_CODES` registers exactly the
+implemented set — so `deserialize_error` can never mint an exception that
+nothing in the tree is able to produce. A code listed here with no class yet
+is pending, not missing.
+
 **Plan and spec**
 
 | Code | Raised when | Correct response |
@@ -672,7 +678,8 @@ rule 4). Tools serialise these; they never let a traceback escape.
 | --- | --- | --- |
 | `E_DIRTY_TREE` | Uncommitted changes at claim time (§8.4) | Human commits or stashes |
 | `E_NOT_A_REPO` | The target directory is not a git repository | Run from a repository root |
-| `E_HARNESS_ERROR` | A harness command failed to launch (§7.3) | Report as environment failure |
+| `E_ALREADY_INITIALIZED` | `init` run over an existing `.redgear/` (§9) | Nothing to do; state exists |
+| `E_HARNESS_ERROR` | A configured harness command is rejected (§7.3) or fails to launch | Report as environment failure |
 
 **Runner**
 
@@ -688,7 +695,7 @@ rule 4). Tools serialise these; they never let a traceback escape.
 | `E_LOG_CORRUPT` | A gap or repeat in event `seq` (FR-1) | Stop; never auto-repair |
 | `E_PROJECTION_DIVERGED` | Rebuild differs from the on-disk projection | Stop; surface loudly (G4) |
 
-Eighteen codes. If a needed failure has no code here, that is a contract gap —
+Twenty codes. If a needed failure has no code here, that is a contract gap —
 report it rather than inventing a code.
 
 ---

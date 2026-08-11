@@ -13,7 +13,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: ruff format --check .
 
@@ -24,7 +24,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: ruff check .
 
@@ -35,7 +35,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - run: pip install -e ".[dev]"
       - run: mypy
 
@@ -44,7 +44,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.11", "3.12"]
+        python-version: ["3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -71,7 +71,7 @@ jobs:
       # gitleaks above and code review remain the backstop for that.
       - name: No credential reads in package
         run: |
-          if grep -rnE "(environ|getenv)[^\n]*(ANTHROPIC|OPENAI|GEMINI)_API_KEY" redgear/; then
+          if grep -rnE "(environ|getenv)[^\n]*(ANTHROPIC_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY)" redgear/; then
             echo "::error::package reads an auth environment variable (violates G5)"
             exit 1
           fi

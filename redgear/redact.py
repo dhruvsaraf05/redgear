@@ -29,7 +29,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterable, Mapping
-from typing import TypeAlias
 
 #: G5 names this pattern literally. Unanchored and case-insensitive, so it
 #: matches a fragment anywhere in a variable name. Kept as a string rather
@@ -51,7 +50,7 @@ _CREDENTIAL_KEY_RE = re.compile(CREDENTIAL_KEY_PATTERN)
 
 #: JSON-shaped data. Spelled out recursively rather than as ``Any``, which
 #: section 11.2 rule 1 permits only in ``hashing.canonical_json``.
-JsonValue: TypeAlias = str | int | float | bool | list["JsonValue"] | dict[str, "JsonValue"] | None
+type JsonValue = str | int | float | bool | list[JsonValue] | dict[str, JsonValue] | None
 
 
 def is_credential_key(name: str) -> bool:

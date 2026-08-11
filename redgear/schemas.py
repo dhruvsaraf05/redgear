@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import StrEnum
-from typing import Annotated, Literal, Self, TypeAlias
+from typing import Annotated, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -426,7 +426,7 @@ class AdrLoggedEvent(EventBase):
     supersedes: str | None
 
 
-Event: TypeAlias = Annotated[
+type Event = Annotated[
     RunStartedEvent
     | RunEndedEvent
     | RunAbortedEvent

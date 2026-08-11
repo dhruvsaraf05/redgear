@@ -7,7 +7,7 @@ name = "redgear"
 version = "0.1.0"
 description = "An autonomous orchestrator that plans software projects, generates task prompts, drives a coding agent CLI in a continuous verified loop, and refuses to accept unproven work."
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 license = "MIT"
 authors = [
     { name = "Dhruv Saraf" },
@@ -47,7 +47,7 @@ packages = ["redgear"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 # ruff formats/lints fenced Python blocks in Markdown by default; this repo's
 # Markdown files (CLAUDE.md in particular) contain illustrative pseudocode,
 # not source to be reformatted.
@@ -55,6 +55,19 @@ extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "PTH", "RUF", "S"]
+
+[tool.ruff.lint.isort]
+# Do not insert a blank line before the first-party (`redgear`) section.
+#
+# Every test module imports the module under test, so `import pytest` sits
+# directly above `from redgear.x import ...`. Without this, isort demands a
+# blank line between them -- and those test files are frozen under G2, so
+# they cannot be reformatted to satisfy it.
+#
+# This also fixes a real local/CI divergence: ruff's warm `.ruff_cache` was
+# masking the violation locally while a fresh CI checkout, which has no
+# cache, reported it on every test module. Lint now agrees on both.
+no-lines-before = ["first-party", "local-folder"]
 
 [tool.ruff.lint.per-file-ignores]
 # S101: assert is the point of a test suite.
@@ -64,7 +77,7 @@ select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "PTH", "RUF", "S"]
 "tests/**" = ["S101", "S603", "S607"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.12"
 strict = true
 packages = ["redgear"]
 
