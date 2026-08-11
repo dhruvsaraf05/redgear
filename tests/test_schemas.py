@@ -21,28 +21,28 @@ ones:
   (``class Budget(Frozen):`` section 8.1, ``class TurnResult(Frozen):``
   section 6.4), so it must exist in schemas.py with that exact name.
   ``frozen=True, extra="forbid"``.
-* The **event taxonomy** (AC-3) is now closed at 14 types per CLAUDE.md
-  section 3.6, added after this file's first draft flagged the taxonomy as
-  the biggest open question. The original 10 (``run_started``,
-  ``run_ended``, ``run_aborted``, ``plan_approved``, ``task_claimed``,
-  ``prompt_dispatched``, ``turn_completed``, ``task_verified``,
-  ``task_rejected``, ``task_escalated``) were confirmed correct; four were
-  added: ``plan_generated`` (section 3.2 -- planning writes spec.json +
-  task_graph.json in state draft, distinct from the later approval),
-  ``spec_updated`` (section 12.1 -- editing spec.json changes the hash and
-  marks descendants ``spec_drift``), ``lease_expired`` (section 10.5's
-  ``expired_lease_reaped`` scenario / T-0016 AC-2), and ``adr_logged``
-  (FR-9 -- an ADR record carries a rule and path globs; section 2.2's
-  ``adrs/index.json``). There is deliberately no ``scope_change`` event
-  pair; section 3.6's own text (not reproduced here -- this file was
-  written from the task instruction naming the omission, not from section
-  3.6's literal wording) is the authority on why. This file never assumed
-  one, so there was nothing to remove.
-  Field-level shapes for the four additions are this file's own
-  construction, grounded in the citations above; re-confirm against
-  section 3.6's literal text once it is available verbatim, the same way
-  the original 10's shapes should be re-confirmed before events.py
-  (T-0010/T-0011) and state_engine.py (T-0014/T-0015) land.
+* The **event taxonomy** (AC-3) is closed at 14 types per CLAUDE.md
+  section 3.6's normative table, which this file now matches field for
+  field -- not inferred. Every event carries the three base fields section
+  3.6 requires on all of them: ``event`` (discriminator), ``seq``, ``ts``,
+  and ``actor`` (an agent id, ``"human"``, or ``"engine"``). Payload
+  fields beyond the base come verbatim from the section 3.6 table for each
+  of the 14 rows, including the ones this file previously got wrong or
+  omitted: ``prompt_dispatched.prompt_sha256`` (not a raw prompt string --
+  section 3.6 is explicit that this is what makes G4 verifiable rather
+  than asserted), ``run_started.base_commit`` (this file previously
+  invented ``repo_path`` instead), ``plan_generated.node_count`` /
+  ``edge_count`` / ``source_document`` (this file previously had a single
+  invented ``task_count``), and the full ``task_claimed`` /
+  ``turn_completed`` / ``task_verified`` / ``task_rejected`` /
+  ``task_escalated`` / ``lease_expired`` / ``adr_logged`` payloads, none of
+  which this file previously modelled beyond one or two fields. Fields the
+  table marks nullable (``run_aborted.task_id``,
+  ``spec_updated.old_spec_hash``, ``turn_completed.num_turns`` /
+  ``cost_usd_estimate``, ``task_escalated.category``,
+  ``adr_logged.supersedes``) are each exercised both populated and null in
+  ``_cases()``. There is deliberately no ``scope_change`` event pair; this
+  file never assumed one.
 * ``Claim`` fields (``base_commit``, ``frozen_hashes``, ``allowed_tools``,
   ``claimed_at``) come directly from the section 4.1 loop pseudocode
   comment ("base_commit + frozen hashes") and from
@@ -201,119 +201,239 @@ PROOF_EXAMPLE: dict[str, Any] = {
     "computed_at": "2026-08-11T00:00:00Z",
 }
 
+# Every event payload below matches CLAUDE.md section 3.6's table exactly:
+# base fields (event, seq, ts, actor) plus that row's "Payload beyond the
+# base" column, no more, no less.
+
 RUN_STARTED_EXAMPLE: dict[str, Any] = {
     "event": "run_started",
     "seq": 0,
     "ts": "2026-08-11T00:00:00Z",
+    "actor": "engine",
     "run_id": "run_01J8X",
-    "repo_path": "/repo",
     "budget": BUDGET_EXAMPLE,
+    "base_commit": "8ac1471000000000000000000000000000000a",
 }
 
 RUN_ENDED_EXAMPLE: dict[str, Any] = {
     "event": "run_ended",
     "seq": 42,
     "ts": "2026-08-11T01:00:00Z",
+    "actor": "engine",
     "run_id": "run_01J8X",
     "reason": "complete",
-    "exit_code": 0,
+    "iterations": 12,
+    "tasks_verified": 5,
+    "tasks_escalated": 0,
+    "duration_ms": 3_600_000,
 }
 
+# task_id is nullable: populated when a task was in flight, null when the
+# abort landed between tasks.
 RUN_ABORTED_EXAMPLE: dict[str, Any] = {
     "event": "run_aborted",
     "seq": 7,
     "ts": "2026-08-11T00:30:00Z",
+    "actor": "engine",
     "run_id": "run_01J8X",
     "signal": "SIGINT",
-}
-
-PLAN_APPROVED_EXAMPLE: dict[str, Any] = {
-    "event": "plan_approved",
-    "seq": 1,
-    "ts": "2026-08-11T00:00:01Z",
-    "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
-    "approver": "dhruvsaraf05@gmail.com",
-}
-
-TASK_CLAIMED_EXAMPLE: dict[str, Any] = {
-    "event": "task_claimed",
-    "seq": 2,
-    "ts": "2026-08-11T00:01:00Z",
+    "iteration": 3,
     "task_id": "T-0003",
-    "base_commit": "8ac1471000000000000000000000000000000a",
-    "frozen_hashes": {"tests/test_schemas.py": "a" * 64},
 }
 
-PROMPT_DISPATCHED_EXAMPLE: dict[str, Any] = {
-    "event": "prompt_dispatched",
-    "seq": 3,
-    "ts": "2026-08-11T00:01:05Z",
-    "task_id": "T-0003",
-    "prompt": "## ROLE\nYou are implementing one task in a verified pipeline.\n",
-}
-
-TURN_COMPLETED_EXAMPLE: dict[str, Any] = {
-    "event": "turn_completed",
-    "seq": 4,
-    "ts": "2026-08-11T00:05:00Z",
-    "task_id": "T-0003",
-    "outcome": "completed",
-}
-
-TASK_VERIFIED_EXAMPLE: dict[str, Any] = {
-    "event": "task_verified",
-    "seq": 5,
-    "ts": "2026-08-11T00:05:10Z",
-    "task_id": "T-0003",
-    "proof_id": "proof-0003-1",
-}
-
-TASK_REJECTED_EXAMPLE: dict[str, Any] = {
-    "event": "task_rejected",
-    "seq": 5,
-    "ts": "2026-08-11T00:05:10Z",
-    "task_id": "T-0003",
-    "proof_id": "proof-0003-1",
-}
-
-TASK_ESCALATED_EXAMPLE: dict[str, Any] = {
-    "event": "task_escalated",
-    "seq": 6,
-    "ts": "2026-08-11T00:05:11Z",
-    "task_id": "T-0003",
-    "reason": "attempts_exhausted",
+RUN_ABORTED_BETWEEN_TASKS_EXAMPLE: dict[str, Any] = {
+    **RUN_ABORTED_EXAMPLE,
+    "seq": 8,
+    "task_id": None,
 }
 
 PLAN_GENERATED_EXAMPLE: dict[str, Any] = {
     "event": "plan_generated",
     "seq": 0,
     "ts": "2026-08-11T00:00:00Z",
+    "actor": "engine",
     "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
-    "task_count": 41,
+    "node_count": 41,
+    "edge_count": 49,
+    "source_document": "docs/PRD.md",
 }
 
+PLAN_APPROVED_EXAMPLE: dict[str, Any] = {
+    "event": "plan_approved",
+    "seq": 1,
+    "ts": "2026-08-11T00:00:01Z",
+    "actor": "human",
+    "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+    "approved_by": "dhruvsaraf05@gmail.com",
+}
+
+# old_spec_hash is nullable: null the first time a spec is ever recorded.
 SPEC_UPDATED_EXAMPLE: dict[str, Any] = {
     "event": "spec_updated",
     "seq": 50,
     "ts": "2026-08-12T00:00:00Z",
-    "old_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
-    "new_hash": "sha256:" + "b" * 64,
+    "actor": "human",
+    "old_spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+    "new_spec_hash": "sha256:" + "b" * 64,
+    "added": ["FR-13"],
+    "removed": [],
+    "modified": ["FR-2"],
+    "tasks_marked_drift": ["T-0005"],
+}
+
+SPEC_UPDATED_INITIAL_EXAMPLE: dict[str, Any] = {
+    **SPEC_UPDATED_EXAMPLE,
+    "seq": 0,
+    "old_spec_hash": None,
+    "added": ["FR-1", "FR-2"],
+    "modified": [],
+    "tasks_marked_drift": [],
+}
+
+TASK_CLAIMED_EXAMPLE: dict[str, Any] = {
+    "event": "task_claimed",
+    "seq": 2,
+    "ts": "2026-08-11T00:01:00Z",
+    "actor": "engine",
+    "task_id": "T-0003",
+    "attempt": 1,
+    "claim_token": "claim-T-0003-1-a1b2c3",
+    "base_commit": "8ac1471000000000000000000000000000000a",
+    "lease_expires": "2026-08-11T00:16:00Z",
+    "frozen_file_count": 3,
+}
+
+PROMPT_DISPATCHED_EXAMPLE: dict[str, Any] = {
+    "event": "prompt_dispatched",
+    "seq": 3,
+    "ts": "2026-08-11T00:01:05Z",
+    "actor": "engine",
+    "task_id": "T-0003",
+    "attempt": 1,
+    "prompt_path": ".redgear/runs/run_01J8X/iterations/0001/prompt.txt",
+    "prompt_sha256": "c" * 64,
+    "allowed_tools": ["Read", "Glob", "Grep", "Edit", "Write", "Bash(git status *)"],
+}
+
+# num_turns and cost_usd_estimate are nullable: null when the runner never
+# got far enough to produce them (e.g. a malformed structured_output).
+TURN_COMPLETED_EXAMPLE: dict[str, Any] = {
+    "event": "turn_completed",
+    "seq": 4,
+    "ts": "2026-08-11T00:05:00Z",
+    "actor": "claude-code",
+    "task_id": "T-0003",
+    "attempt": 1,
+    "outcome": "completed",
+    "exit_code": 0,
+    "num_turns": 4,
+    "duration_ms": 12345,
+    "cost_usd_estimate": 0.42,
+    "parse_ok": True,
+}
+
+TURN_COMPLETED_UNPARSEABLE_EXAMPLE: dict[str, Any] = {
+    **TURN_COMPLETED_EXAMPLE,
+    "seq": 40,
+    "outcome": "blocked",
+    "exit_code": 1,
+    "num_turns": None,
+    "cost_usd_estimate": None,
+    "parse_ok": False,
+}
+
+TASK_VERIFIED_EXAMPLE: dict[str, Any] = {
+    "event": "task_verified",
+    "seq": 5,
+    "ts": "2026-08-11T00:05:10Z",
+    "actor": "engine",
+    "task_id": "T-0003",
+    "attempt": 1,
+    "proof_id": "proof-0003-1",
+    "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+    "gates_passed": [
+        "scope_check",
+        "frozen_hash_check",
+        "lint",
+        "tests_pass",
+        "criteria_coverage",
+        "coverage_delta",
+    ],
+    "duration_ms": 890,
+}
+
+TASK_REJECTED_EXAMPLE: dict[str, Any] = {
+    "event": "task_rejected",
+    "seq": 5,
+    "ts": "2026-08-11T00:05:10Z",
+    "actor": "engine",
+    "task_id": "T-0003",
+    "attempt": 1,
+    "proof_id": "proof-0003-1",
+    "failed_gates": ["tests_pass"],
+    "attempts_remaining": 2,
+    "summary": "GATE tests_pass FAILED (1 failed, 3 passed)",
+}
+
+# category is nullable: populated for a `blocker` escalation (reusing
+# BlockerCategory), null for `attempts_exhausted` -- there is no blocker
+# category when the agent simply ran out of attempts.
+TASK_ESCALATED_EXAMPLE: dict[str, Any] = {
+    "event": "task_escalated",
+    "seq": 6,
+    "ts": "2026-08-11T00:05:11Z",
+    "actor": "engine",
+    "task_id": "T-0003",
+    "reason": "blocker",
+    "category": "ambiguous_task",
+    "detail": "CLAUDE.md section 3.5 is referenced but does not exist.",
+    "attempted": 0,
+}
+
+TASK_ESCALATED_ATTEMPTS_EXHAUSTED_EXAMPLE: dict[str, Any] = {
+    **TASK_ESCALATED_EXAMPLE,
+    "seq": 60,
+    "reason": "attempts_exhausted",
+    "category": None,
+    "detail": "3 attempts consumed without a passing verdict.",
+    "attempted": 3,
 }
 
 LEASE_EXPIRED_EXAMPLE: dict[str, Any] = {
     "event": "lease_expired",
     "seq": 51,
     "ts": "2026-08-12T00:05:00Z",
+    "actor": "engine",
     "task_id": "T-0007",
+    "attempt": 1,
+    "claim_token": "claim-T-0007-1-d4e5f6",
+    "counted_as_attempt": False,
 }
 
+# supersedes is nullable: populated when this ADR replaces an earlier one
+# (ADRs are immutable, section 1.4 -- a change is a new record that
+# supersedes the old, never an edit), null for a brand-new ADR.
 ADR_LOGGED_EXAMPLE: dict[str, Any] = {
     "event": "adr_logged",
     "seq": 52,
     "ts": "2026-08-12T00:10:00Z",
+    "actor": "human",
+    "adr_id": "ADR-0008",
+    "task_id": "T-0007",
+    "title": "hashing.py tasks get a 15-minute lease, not the 5-minute default",
+    "rule": "Lease timeout for hashing.py tasks is 15 minutes.",
+    "applies_to": ["redgear/hashing.py"],
+    "supersedes": "ADR-0003",
+}
+
+ADR_LOGGED_NEW_EXAMPLE: dict[str, Any] = {
+    **ADR_LOGGED_EXAMPLE,
+    "seq": 10,
     "adr_id": "ADR-0007",
+    "title": "Integer minor units only for money",
     "rule": "Store money as integer minor units; never a float.",
     "applies_to": ["redgear/ledger/**"],
+    "supersedes": None,
 }
 
 CLAIM_EXAMPLE: dict[str, Any] = {
@@ -386,18 +506,27 @@ def _cases(
         ("Proof", Proof, PROOF_EXAMPLE),
         ("RunStartedEvent", RunStartedEvent, RUN_STARTED_EXAMPLE),
         ("RunEndedEvent", RunEndedEvent, RUN_ENDED_EXAMPLE),
-        ("RunAbortedEvent", RunAbortedEvent, RUN_ABORTED_EXAMPLE),
+        ("RunAbortedEvent-with-task", RunAbortedEvent, RUN_ABORTED_EXAMPLE),
+        ("RunAbortedEvent-no-task", RunAbortedEvent, RUN_ABORTED_BETWEEN_TASKS_EXAMPLE),
+        ("PlanGeneratedEvent", PlanGeneratedEvent, PLAN_GENERATED_EXAMPLE),
         ("PlanApprovedEvent", PlanApprovedEvent, PLAN_APPROVED_EXAMPLE),
+        ("SpecUpdatedEvent-with-old-hash", SpecUpdatedEvent, SPEC_UPDATED_EXAMPLE),
+        ("SpecUpdatedEvent-initial", SpecUpdatedEvent, SPEC_UPDATED_INITIAL_EXAMPLE),
         ("TaskClaimedEvent", TaskClaimedEvent, TASK_CLAIMED_EXAMPLE),
         ("PromptDispatchedEvent", PromptDispatchedEvent, PROMPT_DISPATCHED_EXAMPLE),
-        ("TurnCompletedEvent", TurnCompletedEvent, TURN_COMPLETED_EXAMPLE),
+        ("TurnCompletedEvent-populated", TurnCompletedEvent, TURN_COMPLETED_EXAMPLE),
+        ("TurnCompletedEvent-unparseable", TurnCompletedEvent, TURN_COMPLETED_UNPARSEABLE_EXAMPLE),
         ("TaskVerifiedEvent", TaskVerifiedEvent, TASK_VERIFIED_EXAMPLE),
         ("TaskRejectedEvent", TaskRejectedEvent, TASK_REJECTED_EXAMPLE),
-        ("TaskEscalatedEvent", TaskEscalatedEvent, TASK_ESCALATED_EXAMPLE),
-        ("PlanGeneratedEvent", PlanGeneratedEvent, PLAN_GENERATED_EXAMPLE),
-        ("SpecUpdatedEvent", SpecUpdatedEvent, SPEC_UPDATED_EXAMPLE),
+        ("TaskEscalatedEvent-blocker", TaskEscalatedEvent, TASK_ESCALATED_EXAMPLE),
+        (
+            "TaskEscalatedEvent-attempts-exhausted",
+            TaskEscalatedEvent,
+            TASK_ESCALATED_ATTEMPTS_EXHAUSTED_EXAMPLE,
+        ),
         ("LeaseExpiredEvent", LeaseExpiredEvent, LEASE_EXPIRED_EXAMPLE),
-        ("AdrLoggedEvent", AdrLoggedEvent, ADR_LOGGED_EXAMPLE),
+        ("AdrLoggedEvent-supersedes", AdrLoggedEvent, ADR_LOGGED_EXAMPLE),
+        ("AdrLoggedEvent-new", AdrLoggedEvent, ADR_LOGGED_NEW_EXAMPLE),
     ]
 
 

@@ -180,18 +180,27 @@ def _drop_none(obj: Any) -> Any:
 
 
 def _canonical_json(obj: Any) -> bytes:
-    return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return json.dumps(
+        obj,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+        default=str,
+    ).encode("utf-8")
 
 
 def compute_spec_hash(spec: dict[str, Any]) -> str:
     """Recompute spec.json's content-addressed hash.
 
-    Canonical algorithm (CLAUDE.md section 3.3.1): sorted keys, tight
-    separators, requirements sorted by id, None fields dropped, out_of_scope
-    sorted, metadata excluded. Only ``requirements`` and ``out_of_scope``
-    are hashed -- schema_version, project, created_at, spec_id, hash, and
-    supersedes are provenance/identity fields, not content, and reordering
-    or timestamping them must not change the content address.
+    Canonical algorithm (CLAUDE.md section 3.5, added after this file first
+    reverse-engineered it): sorted keys, tight separators, requirements
+    sorted by id, None fields dropped, out_of_scope sorted, metadata
+    excluded. Only ``requirements`` and ``out_of_scope`` are hashed --
+    schema_version, project, created_at, spec_id, hash, and supersedes are
+    provenance/identity fields, not content, and reordering or timestamping
+    them must not change the content address. Verified byte-for-byte
+    against section 3.5's own reference implementation.
     """
     requirements = sorted((_drop_none(r) for r in spec["requirements"]), key=lambda r: r["id"])
     out_of_scope = sorted(spec["out_of_scope"])

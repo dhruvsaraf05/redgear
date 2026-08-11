@@ -378,6 +378,117 @@ The planning prompt must require, and the validator must enforce:
 
 Validation failures are returned to the planner as a corrective prompt, up to `plan.max_attempts` (default 3), then surfaced to the human.
 
+### 3.5 Content addressing — normative
+
+The spec hash is computed over **exactly** the requirements and the out-of-scope
+list. Nothing else. `spec_id`, `hash`, `created_at`, `supersedes`, `project`, and
+`schema_version` are excluded because they are metadata: renaming the project
+must not invalidate every task in the graph.
+
+```python
+import hashlib
+import json
+from typing import Any
+
+
+def canonical_json(payload: Any) -> bytes:
+    """Deterministic JSON encoding. The only encoder used for hashing."""
+    return json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+        default=str,
+    ).encode("utf-8")
+
+
+def compute_spec_hash(spec: dict[str, Any]) -> str:
+    """
+    Rules, all load-bearing:
+      1. Requirements sorted by `id`, plain lexicographic.
+      2. Each requirement dumped with None-valued fields omitted.
+      3. `acceptance` lists preserve author order — order is semantic.
+      4. `out_of_scope` is sorted — order is NOT semantic.
+      5. Keys sorted, separators tight, no NaN, UTF-8.
+    """
+    requirements = sorted(spec["requirements"], key=lambda r: str(r["id"]))
+    normalised = [{k: v for k, v in r.items() if v is not None} for r in requirements]
+    payload = {
+        "requirements": normalised,
+        "out_of_scope": sorted(spec.get("out_of_scope", [])),
+    }
+    return "sha256:" + hashlib.sha256(canonical_json(payload)).hexdigest()
+
+
+def spec_id_from_hash(spec_hash: str) -> str:
+    """spec-<first 6 hex chars of the digest>."""
+    return "spec-" + spec_hash.removeprefix("sha256:")[:6]
+```
+
+**Drift handling.** Every task stores the `spec_hash` it was planned against. On
+any load, compare stored to current. On mismatch:
+
+1. Do not silently continue.
+2. Move every non-`verified` task whose `spec_refs` intersect the changed
+   requirement IDs to `spec_drift`.
+3. Append a `spec_updated` event listing added, removed, and modified IDs.
+4. Refuse to serve drifted tasks; return `E_SPEC_DRIFT` naming them.
+
+Verified tasks are **not** invalidated. Their proof remains a true statement
+about the spec version they were verified against. That is the point of content
+addressing.
+
+### 3.6 Event taxonomy — normative and closed
+
+Fourteen event types. **This list is closed.** Adding one is an ADR-worthy
+change, because `events.py` (T-0010) and the state engine write path (T-0014)
+both require it to be exhaustive rather than plausible.
+
+Every event carries `ts` (RFC 3339 UTC, `Z` suffix), `seq` (gapless monotonic),
+and `actor` (agent id, `"human"`, or `"engine"`).
+
+**Run lifecycle**
+
+| Event | Appended when | Payload beyond the base |
+| --- | --- | --- |
+| `run_started` | The run lock is acquired | `run_id`, `budget`, `base_commit` |
+| `run_ended` | The loop exits normally | `run_id`, `reason` (§4.3), `iterations`, `tasks_verified`, `tasks_escalated`, `duration_ms` |
+| `run_aborted` | SIGINT or SIGTERM; process tree terminated, locks released | `run_id`, `signal`, `iteration`, `task_id` (nullable) |
+
+**Plan lifecycle**
+
+| Event | Appended when | Payload beyond the base |
+| --- | --- | --- |
+| `plan_generated` | `redgear plan` writes a draft spec and graph | `spec_hash`, `node_count`, `edge_count`, `source_document` |
+| `plan_approved` | A human approves the draft (§3.3) | `spec_hash`, `approved_by` |
+| `spec_updated` | The spec hash changes (§3.5) | `old_spec_hash` (nullable), `new_spec_hash`, `added`, `removed`, `modified`, `tasks_marked_drift` |
+
+**Task lifecycle**
+
+| Event | Appended when | Payload beyond the base |
+| --- | --- | --- |
+| `task_claimed` | A lease is acquired | `task_id`, `attempt`, `claim_token`, `base_commit`, `lease_expires`, `frozen_file_count` |
+| `prompt_dispatched` | The prompt is persisted and handed to the runner | `task_id`, `attempt`, `prompt_path`, `prompt_sha256`, `allowed_tools` |
+| `turn_completed` | The agent process has exited | `task_id`, `attempt`, `outcome`, `exit_code`, `num_turns` (nullable), `duration_ms`, `cost_usd_estimate` (nullable), `parse_ok` |
+| `task_verified` | Every gate passed | `task_id`, `attempt`, `proof_id`, `spec_hash`, `gates_passed`, `duration_ms` |
+| `task_rejected` | A gate failed with attempts remaining | `task_id`, `attempt`, `proof_id`, `failed_gates`, `attempts_remaining`, `summary` |
+| `task_escalated` | Blocked, scope-insufficient, or attempts exhausted | `task_id`, `reason`, `category` (nullable), `detail`, `attempted` |
+| `lease_expired` | A lease is reaped (§8.3) | `task_id`, `attempt`, `claim_token`, `counted_as_attempt` |
+
+**Decisions**
+
+| Event | Appended when | Payload beyond the base |
+| --- | --- | --- |
+| `adr_logged` | An architecture decision is recorded (FR-9) | `adr_id`, `task_id`, `title`, `rule`, `applies_to`, `supersedes` (nullable) |
+
+`prompt_sha256` on `prompt_dispatched` is what makes G4 verifiable rather than
+asserted: the persisted prompt file can be re-hashed and matched against the log.
+
+There is deliberately **no scope-change event pair**. In the loop architecture an
+under-scoped task returns `scope_insufficient` and escalates (§5.3); the human
+re-plans. Scope is never widened mid-run.
+
 ---
 
 ## 4. Phase 2 — The continuous execution loop
@@ -492,7 +603,7 @@ A smoke check is a command that either exits zero or does not: does the editable
 
 ---
 
-## 4.6 Bootstrap — redgear's first project is redgear
+### 4.6 Bootstrap — redgear's first project is redgear
 
 The canonical plan in `.redgear/spec/spec.json` and `.redgear/task_graph.json` describes building redgear itself. This creates a genuine ordering constraint worth stating plainly:
 
@@ -504,6 +615,19 @@ Two consequences:
 
 1. **Do not treat the manual phase as throwaway.** Every task before T-0033 still writes real events to `.redgear/events.jsonl` and still produces real proofs. When the loop takes over it must find a coherent state directory, not a fresh one.
 2. **The crossover is the project's best validation.** If redgear can complete T-0034 through T-0041 unattended, the thesis holds. If it cannot, that is the most informative failure the project will produce — and it will point at `prompt_engine.py`, not the orchestrator.
+
+### 4.6.1 Red-state workflow during the manual phase
+
+A `test_authoring` task ends RED by design (§7.2). CI demands green. These are
+reconciled by branching, not by weakening either rule.
+
+Work one branch per task pair: `task/T-XXXX-T-YYYY`. Push freely — CI does not
+run on branches, only on main pushes and pull requests. Open a PR only once the
+implementation task has turned the pair green. Main is never red.
+
+Never push a `test_authoring` commit directly to main. If it happens, the correct
+fix is to complete the paired implementation task, not to disable a gate or mark
+a test xfail.
 
 ---
 
