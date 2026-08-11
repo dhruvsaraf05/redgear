@@ -22,15 +22,24 @@ dependencies = [
 redgear = "redgear.cli:app"
 
 [project.optional-dependencies]
+# Exact pins, not floors. These tools gate the build: ruff and mypy add rules
+# between releases, so a floor means CI resolves a newer version than the one
+# the code was checked against and fails on lint that passes locally. That
+# also fails the test suite, because tests/test_smoke.py shells out to both.
+# Pinned to the versions this tree actually passes against; bump deliberately,
+# never incidentally. Every pin here satisfies the floors CLAUDE.md §2.1
+# requires, and all support Python >=3.10 so the 3.11/3.12 CI matrix resolves.
+# Runtime dependencies above stay as floors -- they are what downstream
+# installs must tolerate, not what gates this build.
 dev = [
-    "pytest>=8.0",
-    "pytest-json-report>=1.5",
-    "pytest-cov",
-    "coverage>=7.5",
-    "mypy>=1.10",
-    "ruff>=0.5",
-    "pyyaml",
-    "build",
+    "pytest==9.1.1",
+    "pytest-json-report==1.5.0",
+    "pytest-cov==7.1.0",
+    "coverage==7.15.4",
+    "mypy==2.3.0",
+    "ruff==0.16.2",
+    "pyyaml==6.0.3",
+    "build==1.5.0",
 ]
 
 [tool.hatch.build.targets.wheel]
