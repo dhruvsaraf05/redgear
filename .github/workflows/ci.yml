@@ -62,19 +62,25 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - name: No credential env var reads under redgear/
+      # These match a credential *read* (os.environ[...] / os.getenv(...)),
+      # not a bare mention of the name. The previous form matched the literal
+      # string anywhere under redgear/, so a docstring citing the rule --
+      # which CLAUDE.md §10.3 itself does -- would trip the gate enforcing it.
+      # Tradeoff: an indirect read via a variable holding the key name
+      # (k = "ANTHROPIC_API_KEY"; os.environ[k]) is no longer caught here.
+      # gitleaks above and code review remain the backstop for that.
+      - name: No credential reads in package
         run: |
-          set -euo pipefail
-          if grep -rnE "ANTHROPIC_API_KEY|OPENAI_API_KEY|GEMINI_API_KEY" redgear/; then
-            echo "::error::Credential environment variable referenced under redgear/ -- forbidden by G5"
+          if grep -rnE "(environ|getenv)[^\n]*(ANTHROPIC|OPENAI|GEMINI)_API_KEY" redgear/; then
+            echo "::error::package reads an auth environment variable (violates G5)"
             exit 1
           fi
-          echo "No credential env var references found."
-      - name: No network client imports under redgear/
+          echo "ok — no credential reads"
+
+      - name: No network clients in package
         run: |
-          set -euo pipefail
-          if grep -rnE "^\s*(import|from)\s+(httpx|urllib|socket|requests)\b" redgear/; then
-            echo "::error::Network client import under redgear/ -- forbidden by G5"
+          if grep -rnE "^[[:space:]]*(import|from)[[:space:]]+(httpx|urllib|socket|requests)\b" redgear/; then
+            echo "::error::package imports a network client (violates G5)"
             exit 1
           fi
-          echo "No network client imports found."
+          echo "ok — no network imports"
