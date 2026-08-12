@@ -97,16 +97,7 @@ class ScopeOverlapError(RedgearError):
 
 
 class TaskStateError(RedgearError):
-    """An illegal transition for the task's current state (section 4.2).
-
-    NOT registered in ``ERROR_CODES`` below, and that is a known defect
-    rather than a decision: ``tests/test_errors.py`` is frozen and asserts
-    the registry holds exactly the twelve codes it enumerates, so adding a
-    thirteenth breaks it. The class is fully usable -- it carries its section
-    4.7 code and is catchable as ``RedgearError`` -- but
-    ``deserialize_error("E_TASK_STATE")`` will raise ``KeyError`` until that
-    test is re-opened. Reported in the T-0014/T-0015 turn.
-    """
+    """An illegal transition for the task's current state (section 4.2)."""
 
     code: ClassVar[str] = "E_TASK_STATE"
 
@@ -177,6 +168,7 @@ ERROR_CODES: dict[str, type[RedgearError]] = {
         GraphCycleError,
         UnknownNodeRefError,
         ScopeOverlapError,
+        TaskStateError,
         RunLockedError,
         DirtyTreeError,
         NotAGitRepoError,

@@ -31,8 +31,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from redgear.events import append, last_seq, replay
 from redgear.errors import EventLogCorruptError
+from redgear.events import append, last_seq, replay
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
