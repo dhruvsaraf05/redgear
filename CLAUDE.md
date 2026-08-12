@@ -15,6 +15,10 @@ Read sections 0, 1, 8 and 11 before writing any code. Read the section relevant 
 3. An ADR recorded in `docs/adr/` for this repository.
 4. Your own judgement.
 
+**Session handoff.** `docs/PROGRESS.md` records current status, decisions
+taken, traps already hit, and open questions. Read it after this file when
+starting a session with no prior context. Update it when any of those change.
+
 If (1) contradicts (2), follow (1) and say plainly that it contradicts `CLAUDE.md`, naming the section. Do not silently deviate.
 
 ### 0.2 Terminology
