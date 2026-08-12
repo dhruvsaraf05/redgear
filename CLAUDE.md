@@ -135,7 +135,16 @@ An agent with only two outcomes — pass or fail-and-retry — is structurally i
 `.redgear/events.jsonl` is the append-only source of truth.
 
 - Every state transition, every prompt sent, and every turn result appends exactly one line. Lines are never edited, reordered, or deleted.
-- `task_graph.json` is a **materialised projection**, reconstructible by replaying the log from line 0.
+- The plan (`spec.json` + `task_graph.json` node and edge definitions) is
+  content-addressed and immutable once approved. It is not derived from the
+  log; it is the input the log records work against.
+- Mutable task state — `state`, `attempts`, `claim`, `prior_attempts`,
+  `verified_at`, `proof_id`, `escalation` — IS fully reconstructible by
+  replaying `events.jsonl` from line 0 onto the plan definition.
+- `replay(definition, events)` folds events onto the plan. `redgear rebuild`
+  compares the result against the on-disk projection and fails loudly on
+  divergence. Structure divergence means the plan was edited out of band;
+  state divergence means an engine bug. Both are errors, neither auto-heals.
 - **Every prompt redgear sends is persisted verbatim** before dispatch. A run you cannot read back prompt-by-prompt is not auditable, and auditability is the product.
 - `redgear rebuild` replays and rewrites the projection. A mismatch is an engine bug — surface it loudly, never auto-heal.
 
@@ -488,6 +497,13 @@ asserted: the persisted prompt file can be re-hashed and matched against the log
 There is deliberately **no scope-change event pair**. In the loop architecture an
 under-scoped task returns `scope_insufficient` and escalates (§5.3); the human
 re-plans. Scope is never widened mid-run.
+
+**On what the log does and does not carry.** No event carries node or edge
+definitions. `plan_generated` records the plan's hash and shape, not its
+contents — the plan is a separate content-addressed artifact. This is
+deliberate: duplicating the graph into the log would create two sources of
+truth for structure and guarantee they drift. The log is the record of what
+happened to the plan, not a copy of it.
 
 ---
 

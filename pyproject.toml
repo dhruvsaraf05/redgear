@@ -69,6 +69,16 @@ select = ["E", "W", "F", "I", "N", "UP", "B", "C4", "SIM", "PTH", "RUF", "S"]
 # cache, reported it on every test module. Lint now agrees on both.
 no-lines-before = ["first-party", "local-folder"]
 
+# Pin `redgear` as first-party regardless of whether a given submodule file
+# exists on disk yet.
+#
+# Without this, ruff infers classification from the filesystem, so a
+# test_authoring task (module absent -> `redgear.x` looks third-party) and its
+# paired implementation task (module present -> first-party) disagree about
+# the correct import order. The Phase-1 `--fix` output then becomes a lint
+# error in Phase 2, on a file that is frozen by then and cannot be corrected.
+known-first-party = ["redgear"]
+
 [tool.ruff.lint.per-file-ignores]
 # S101: assert is the point of a test suite.
 # S603/S607: tests invoke git and dev tools by bare name via PATH on fixed,
