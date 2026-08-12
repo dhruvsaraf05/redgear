@@ -639,15 +639,29 @@ Two consequences:
 ### 4.6.1 Red-state workflow during the manual phase
 
 A `test_authoring` task ends RED by design (§7.2). CI demands green. These are
-reconciled by branching, not by weakening either rule.
+reconciled by **never committing a half-pair**, not by weakening either rule.
 
-Work one branch per task pair: `task/T-XXXX-T-YYYY`. Push freely — CI does not
-run on branches, only on main pushes and pull requests. Open a PR only once the
-implementation task has turned the pair green. Main is never red.
+Work on `main`. Complete **both phases of a pair in one session**: write the
+failing tests, confirm the red is the intended `ModuleNotFoundError`, implement
+until green, then commit once. The red state exists only in the working tree,
+never in a commit, so `main` is never red and CI never sees a half-pair.
 
-Never push a `test_authoring` commit directly to main. If it happens, the correct
-fix is to complete the paired implementation task, not to disable a gate or mark
-a test xfail.
+Commit only when all four gates pass:
+
+```bash
+ruff format --check . && ruff check . --no-cache && mypy && pytest -q
+```
+
+**Never commit a `test_authoring` phase on its own.** If a session ends
+mid-pair, leave the work uncommitted and hand off through `docs/PROGRESS.md`.
+If a half-pair does land, the correct fix is to complete the implementation
+phase, not to disable a gate or mark a test `xfail`.
+
+Branching was tried and abandoned: a PR from a branch carrying only the
+`test_authoring` half triggers CI on a deliberately-red tree, and a
+rebase-and-merge rewrote three commits into conflicts against byte-identical
+local copies. The branch bought nothing the "one green commit per pair" rule
+does not already give.
 
 ### 4.7 Error codes — normative and closed
 

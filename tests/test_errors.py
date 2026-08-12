@@ -1,54 +1,29 @@
-"""T-0004: failing tests for redgear.errors -- the RedgearError hierarchy.
+"""Tests for redgear.errors -- the RedgearError hierarchy and its registry.
 
-``redgear/errors.py`` does not exist yet, so the import block below fails at
-COLLECTION with ``ModuleNotFoundError``. That is the correct red state
-(CLAUDE.md section 10.4 / this task's own instructions): no try/except, no
-``importorskip``, no mock standing in for the module.
+Originally T-0004's failing tests, written before ``redgear/errors.py``
+existed. The module now exists (T-0005) and these run against it.
 
-## The error-code set is not exhaustively documented anywhere -- flagged
+## History worth keeping
 
-CLAUDE.md names exactly three codes literally, as ``E_``-prefixed tokens in
-running prose:
+When this file was written, CLAUDE.md named only three error codes literally
+-- ``E_PLAN_UNREVIEWED`` (§3.3), ``E_SPEC_DRIFT`` (§3.5) and ``E_DIRTY_TREE``
+(§8.4) -- and the rest had to be constructed from refuse/reject/fail-loudly
+conditions scattered through the contract. That gap was reported and closed:
+**§4.7 is now the normative, closed table of twenty codes**, and
+``_section_4_7_codes`` below parses it directly so the registry cannot drift
+from it.
 
-* ``E_PLAN_UNREVIEWED`` -- section 3.3: "`redgear run` refuses to start on a
-  `draft` graph with `E_PLAN_UNREVIEWED`."
-* ``E_SPEC_DRIFT`` -- section 3.5: "Refuse to serve drifted tasks; return
-  `E_SPEC_DRIFT` naming them."
-* ``E_DIRTY_TREE`` -- section 8.4: "Refuse to start on a dirty tree
-  (`E_DIRTY_TREE`), listing the offending paths."
+## What the registry assertion means
 
-Everything else in the set below is *constructed* by this file from clearly
-stated refuse/reject/fail-loudly conditions elsewhere in the contract, not
-from a literal ``E_`` token in the text. Each constructed code is cited at
-its class definition site in ``redgear/errors.py`` once T-0005 writes it, and
-listed here so the provenance is auditable:
+``ERROR_CODES`` is a **subset** of §4.7, not an exact match. §4.7 is the
+closed design; the registry is what is implemented so far, and it grows as
+each raising module lands. Registering a code whose raiser does not exist
+would let ``deserialize_error`` mint an exception nothing can produce.
 
-* ``E_NOT_A_GIT_REPO`` -- section 8.4 ("Refuse to start outside a git
-  repository") + section 9's `redgear init` row ("...or the tree is not a
-  git repo").
-* ``E_ALREADY_INITIALIZED`` -- section 9's `redgear init` row ("Refuses if
-  it exists...").
-* ``E_GRAPH_CYCLE`` -- section 4.4 invariant 1 / FR-2 acceptance ("A cycle
-  in the edge set is rejected with the offending cycle named").
-* ``E_UNKNOWN_NODE_REF`` -- section 4.4 invariant 2 / FR-2 acceptance
-  ("Every depends_on entry and edge endpoint refers to an existing node").
-* ``E_SCOPE_OVERLAP`` -- section 4.4 invariant 7, and this task's own AC-3
-  (``tests/test_paths.py::test_scope_overlap_detected``) -- the most
-  directly load-bearing of the constructed set, since paths.py raises it.
-* ``E_EVENT_LOG_CORRUPT`` -- FR-1 acceptance ("A gap or repeat in sequence
-  numbers is reported as corruption and never auto-repaired").
-* ``E_PROJECTION_MISMATCH`` -- section 9's `redgear rebuild` row ("fail
-  loudly on mismatch") + section 4.3's `engine_error` termination reason.
-* ``E_RUN_LOCKED`` -- T-0016 AC-3 ("A second run in the same repository is
-  refused while a run lock is held").
-* ``E_UNSAFE_HARNESS_COMMAND`` -- section 7.3 ("Reject any configured `cmd`
-  containing `..`").
-
-**This needs to become a normative table like section 3.6, the same class of
-gap as the pre-section-3.6 event taxonomy and the pre-section-3.5 hash
-algorithm** -- flagged in this task's turn report for confirmation before
-later modules (locks.py, state_engine.py, verifier.py, cli.py) each need a
-subset of this set to exist with these exact names.
+This assertion previously demanded exact equality at twelve entries, which
+capped the registry permanently and blocked ``E_TASK_STATE`` (needed by
+T-0015) from ever being registered. Corrected under explicit authorization;
+see ``docs/PROGRESS.md``.
 """
 
 from __future__ import annotations

@@ -7,23 +7,23 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0015 (state_engine write path).*
+*Last updated: after T-0021 (gitctx).*
 
 ---
 
 ## 1. Where we are
 
-**Milestone 2 complete.** `T-0001` through `T-0015` are done. Next up is
-**`T-0016`/`T-0017` — `locks.py`** (exclusive task leases and the single-run
-lock).
+**Milestone 4 complete.** `T-0001` through `T-0021` are done. Next up is
+**`T-0022`/`T-0023` — `verifier.py` gates 1–2** (scope check and frozen-hash
+audit), the first half of the verification harness.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **124 passed, 1 skipped** |
+| Test suite | **158 passed, 1 skipped** |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine` |
-| Not yet built | `locks`, `budget`, `gitctx`, `verifier`, `runner`, `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/`, `ui/` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx` |
+| Not yet built | `verifier`, `runner`, `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/`, `ui/` |
 | Crossover | `T-0033` (`cli.py`). Until then every task is driven manually by a human running Claude Code. |
 
 ### Task status
@@ -40,10 +40,10 @@ lock).
 | T-0010/11 | test/impl | done | `events.py` — append-only log, gapless sequencing |
 | T-0012/13 | test/impl | done | `state_engine.py` read path — load, validate, project |
 | T-0014/15 | test/impl | done | `state_engine.py` write path — transitions, atomic persistence |
-| **T-0016/17** | test/impl | **next** | `locks.py` — task leases, single-run lock |
-| T-0018/19 | test/impl | todo | `budget.py` — autonomy caps, STOP sentinel, signals |
-| T-0020/21 | test/impl | todo | `gitctx.py` — read-only git interrogation, diff parsing |
-| T-0022/23 | test/impl | todo | `verifier.py` gates 1–2 — scope, frozen hash |
+| T-0016/17 | test/impl | done | `locks.py` — task leases, single-run lock |
+| T-0018/19 | test/impl | done | `budget.py` — autonomy caps, STOP sentinel, signals |
+| T-0020/21 | test/impl | done | `gitctx.py` — read-only git interrogation, diff parsing |
+| **T-0022/23** | test/impl | **next** | `verifier.py` gates 1–2 — scope, frozen hash |
 | T-0024/25 | test/impl | todo | `verifier.py` gates 3–6 — lint, tests, criteria, coverage |
 | T-0026/27 | test/impl | todo | runner protocol + deterministic fake runner |
 | T-0028/29 | test/impl | todo | `prompt_engine.py` — **highest risk**, snapshots mandatory |
@@ -121,18 +121,35 @@ nodes `spec_drift` (§3.5).
 
 ### Branches were abandoned; work commits directly on main
 
-§4.6.1 prescribes one branch per task pair. That was tried and abandoned after
-it produced more failure than it prevented:
+Branch-per-pair was tried and abandoned after it produced more failure than it
+prevented:
 
 - A PR from a branch carrying only the `test_authoring` half triggers CI on a
-  deliberately-red tree. §4.6.1 says open the PR only once the pair is green,
-  which means the branch buys nothing during the pair and only adds a merge.
+  deliberately-red tree. The rule was already "open the PR only once the pair is
+  green", so the branch bought nothing during the pair and only added a merge.
 - A GitHub rebase-and-merge rewrote the SHAs of three commits, producing a
   conflict against local `main` where **every remote commit was a byte-identical
   copy of a local one**. Pure churn, zero content.
 
-Work now happens on `main`, one commit per completed (green) pair.
-**§4.6.1 is stale on this point and has not been rewritten.**
+Work happens on `main`: both phases of a pair in one session, commit once when
+green. The red state lives only in the working tree, never in a commit.
+**§4.6.1 has been rewritten to describe this** — it no longer prescribes
+branches.
+
+### `gitctx` requires the repository *root*, not merely a directory inside one
+
+`git rev-parse HEAD` succeeds in any directory *inside* a repository — git
+walks upward to find one. On this machine it succeeds in the system temp
+directory, because some ancestor is a repo.
+
+Left alone, `redgear` pointed at a stray directory would silently diff, hash
+and report against an unrelated enclosing repository. So `gitctx._git`
+verifies `rev-parse --show-toplevel` equals the requested root and raises
+`E_NOT_A_REPO` otherwise. §8.4's "refuse to start outside a git repository" is
+only a safety property if "outside" means "not this repository's root".
+
+The check is cached per resolved path, so it costs one extra git call per
+repository per process.
 
 ### Claude Code does not commit
 
@@ -206,6 +223,32 @@ from a local pass. Pinning exact dev-tool versions in `pyproject.toml` closed th
 *tooling* half of this (CI was resolving newer ruff/mypy than local), but not the
 interpreter half.
 
+### `git rev-parse` succeeds outside the repo you meant
+
+**Symptom:** a test asserting "this plain directory is not a repository"
+fails, because git found one several levels up.
+
+**Cause:** git resolves upward through parent directories. The system temp
+directory can sit inside an unrelated repository, so *every* git command
+quietly targets that one.
+
+**Fix:** compare `rev-parse --show-toplevel` against the requested root
+(`gitctx._git` does this). Never assume a fresh `tmp_path` directory is
+outside version control.
+
+### Signal handling differs on Windows; the process-tree kill is platform-split
+
+`os.killpg` and process groups do not exist usefully on Windows, so
+`budget.terminate_process_tree` shells out to `taskkill /F /T /PID` there and
+uses `killpg` on POSIX. Both are best-effort: a grandchild that has already
+reparented is unreachable by either.
+
+**`SIGTERM` is not delivered on Windows the way it is on POSIX** — Python
+maps it, but `os.kill` with it terminates immediately rather than running a
+handler. The tree-kill path is therefore what is actually tested here; the
+POSIX `killpg` branch is exercised only in CI. Treat that branch as
+**unverified locally**.
+
 ### `list` is invariant; `list[str]` does not satisfy `list[JsonValue]`
 
 **Symptom:** mypy rejects `detail={"k": sorted(x)}`; rewriting as a
@@ -230,6 +273,7 @@ names the defect that justified it.
 | `tests/test_events.py` | Reordered the import block (`errors` before `events`) | Written under the pre-`known-first-party` classification, so the order was invalid once `redgear.events` existed. Pinning classification could not retroactively repair an order already baked in. |
 | `tests/test_state_write.py` | Deleted one dead line, `monkeypatch.setattr(target, "name", ...)` | `Path.name` is a read-only property, so the call could never succeed; `raising=False` suppresses only *missing* attributes. The line was vestigial — the next line does the actual restore. Verified by mutation test that the remaining assertions still catch a truncate-and-write implementation. |
 | `tests/test_errors.py` | Exact-count registry assertion → subset relationship; registered `TaskStateError` | The assertion capped `ERROR_CODES` at twelve forever, which blocked `E_TASK_STATE` (needed by T-0015) and would have blocked every future error type. It was simply the wrong assertion — the registry is meant to grow. |
+| `tests/test_errors.py` | Module docstring rewritten (docstring only, no assertions) | It still opened *"`redgear/errors.py` does not exist yet"* and described deriving codes from prose, which §4.7 had since replaced. Misleading to any new reader. |
 
 `pyproject.toml` and `.github/**` are frozen to task work but were edited twice
 under explicit authorization: to pin exact dev-tool versions and narrow the G5
@@ -260,18 +304,26 @@ No option is free. This wants a deliberate call, not a default.
 
 §4.1 says `None`; §4.7 says error code. See §2. Deferred to **T-0030**.
 
-### §4.6.1 is stale
+### `state_engine.py` still carries a private git helper
 
-It prescribes branch-per-pair; the project commits on main. Either rewrite
-§4.6.1 or document the deviation there. Right now the contract says one thing
-and the project does another, which is exactly the drift §0.1 exists to prevent.
+T-0015 added `_git`, `_repo_files` and `_frozen_digest_map` to
+`state_engine.py` as a stand-in, because `gitctx` did not exist yet. **It does
+now (T-0021)**, and those three can be replaced by `gitctx.head_commit` and
+`gitctx.tracked_and_untracked`.
 
-### `tests/test_errors.py`'s module docstring is stale
+Not done this turn, deliberately: it is a refactor of a module whose tests are
+frozen, so it deserves to be a considered step rather than a side effect. The
+duplication is small and harmless until then, but it means two code paths ask
+git the same questions — and only one of them has the repository-root guard
+described above.
 
-It still opens *"`redgear/errors.py` does not exist yet"* and describes the
-pre-§4.7 state where codes were being derived from prose. Harmless to the tests,
-misleading to a reader. Not corrected because the authorization for that file
-covered the registry assertion only.
+### `E_INVALID_CLAIM` and `E_LEASE_EXPIRED` are declared but unimplemented
+
+Both are in §4.7. `locks.py` raises `RunLockedError` for a wrong-token release
+(where `E_INVALID_CLAIM` arguably belongs) and treats lease expiry as an
+*event*, not an error, so neither class exists yet. Consistent with the
+"registry grows as raisers land" rule, but worth a look when the orchestrator
+wires claims together at T-0030.
 
 ---
 

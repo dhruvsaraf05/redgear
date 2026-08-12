@@ -191,6 +191,23 @@ class Escalation(Strict):
     escalated_at: datetime
 
 
+class LockRecord(Strict):
+    """The contents of a lock file (`locks.py`).
+
+    Self-describing on purpose: the failure users actually hit is a stale
+    lock, and section 8.3 is explicit that they must not be left deleting a
+    file they do not understand. Holder and expiry make it diagnosable by
+    reading it.
+    """
+
+    task_id: str
+    holder: str
+    token: str
+    acquired_at: datetime
+    expires_at: datetime
+    attempt: int = 1
+
+
 class PriorAttempt(Strict):
     attempt_number: int
     outcome: TurnOutcome
