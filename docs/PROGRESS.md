@@ -7,24 +7,29 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0021 (gitctx).*
+*Last updated: after T-0023 (verifier gates 1–2).*
 
 ---
 
 ## 1. Where we are
 
-**Milestone 4 complete.** `T-0001` through `T-0021` are done. Next up is
-**`T-0022`/`T-0023` — `verifier.py` gates 1–2** (scope check and frozen-hash
-audit), the first half of the verification harness.
+**`T-0001` through `T-0023` are done.** Next up is **`T-0024`/`T-0025` —
+`verifier.py` gates 3–6** (lint, tests_pass, criteria_coverage,
+coverage_delta), which completes the verification harness.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **158 passed, 1 skipped** |
+| Test suite | **183 passed, 1 skipped** |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx` |
-| Not yet built | `verifier`, `runner`, `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/`, `ui/` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (gates 1–2) |
+| Not yet built | `verifier` gates 3–6, `runner`, `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/`, `ui/` |
 | Crossover | `T-0033` (`cli.py`). Until then every task is driven manually by a human running Claude Code. |
+
+**Gates 3–6 are currently reported `skipped`, never `passed`** — a stub that
+always passes would put an unearned green in a proof. That also means
+`run_gates` can never return `Verdict.PASS` until T-0025 lands, which is
+correct and is asserted by `test_gates_three_to_six_are_not_stubbed`.
 
 ### Task status
 
@@ -43,8 +48,8 @@ audit), the first half of the verification harness.
 | T-0016/17 | test/impl | done | `locks.py` — task leases, single-run lock |
 | T-0018/19 | test/impl | done | `budget.py` — autonomy caps, STOP sentinel, signals |
 | T-0020/21 | test/impl | done | `gitctx.py` — read-only git interrogation, diff parsing |
-| **T-0022/23** | test/impl | **next** | `verifier.py` gates 1–2 — scope, frozen hash |
-| T-0024/25 | test/impl | todo | `verifier.py` gates 3–6 — lint, tests, criteria, coverage |
+| T-0022/23 | test/impl | done | `verifier.py` gates 1–2 — scope check, frozen hash |
+| **T-0024/25** | test/impl | **next** | `verifier.py` gates 3–6 — lint, tests, criteria, coverage |
 | T-0026/27 | test/impl | todo | runner protocol + deterministic fake runner |
 | T-0028/29 | test/impl | todo | `prompt_engine.py` — **highest risk**, snapshots mandatory |
 | T-0030/31 | test/impl | todo | `orchestrator.py` — the continuous loop |
@@ -118,6 +123,26 @@ build exercises is a promise nothing checks.
 `.redgear/spec/spec.json` `NFR-10` still says 3.11 and is **not** edited: it is
 content-addressed, and changing it moves `sha256:dd2914…` and marks all 41
 nodes `spec_drift` (§3.5).
+
+### Gate 2 is defence in depth, not a second chance at gate 1
+
+For a validly-scoped task, **any touch of a frozen path fails gate 1 first**
+and gate 2 is recorded skipped. §4.4 invariant 7 guarantees frozen and
+writable globs are disjoint, and gate 1 checks a *modification* against
+`writable_globs` — so a frozen modification is always also an
+`out_of_scope_write`.
+
+That does not make gate 2 redundant. It catches what gate 1's glob logic
+cannot see:
+
+- a **newly created** file inside a frozen glob (untracked, absent from the
+  recorded digest map, so re-hashing only the recorded paths would pass it);
+- a **deleted** frozen file — the crudest way to make a failing suite green;
+- any content difference the diff does not reflect.
+
+Gate 2 rarely fires alone, and that is correct behaviour rather than a sign
+it is doing nothing. Now recorded in **CLAUDE.md §7.2** as well, since it is
+a property of the design and not just an observation about the tests.
 
 ### Branches were abandoned; work commits directly on main
 
@@ -249,6 +274,30 @@ handler. The tree-kill path is therefore what is actually tested here; the
 POSIX `killpg` branch is exercised only in CI. Treat that branch as
 **unverified locally**.
 
+### `git ls-files --cached` lists deleted files; hashing them raises
+
+**Symptom:** `frozen_hash_check` crashed with `FileNotFoundError` on exactly
+the case it exists to report — a deleted frozen file.
+
+**Cause:** `git ls-files --cached --others` includes tracked files that have
+been deleted from the working tree. Feeding that straight into `digest_map`
+tries to hash a path that is not there.
+
+**Fix:** filter the expansion to `(repo_root / path).is_file()`. The deleted
+path then falls out of the current map and is correctly reported as
+`frozen_file_deleted` rather than raising. See `verifier._current_frozen_digests`.
+
+### Phase 1 must run `ruff format`, not only `ruff check`
+
+**Symptom:** `ruff format --check .` fails in Phase 2 on a test file that is
+frozen by then and cannot be corrected.
+
+**Cause:** `ruff check` and `ruff format` are separate tools. Linting a new
+test file clean in Phase 1 says nothing about its formatting.
+
+**Fix:** in Phase 1, run `ruff format tests/<new file>` *and*
+`ruff check . --no-cache` before declaring the phase done.
+
 ### `list` is invariant; `list[str]` does not satisfy `list[JsonValue]`
 
 **Symptom:** mypy rejects `detail={"k": sorted(x)}`; rewriting as a
@@ -274,6 +323,15 @@ names the defect that justified it.
 | `tests/test_state_write.py` | Deleted one dead line, `monkeypatch.setattr(target, "name", ...)` | `Path.name` is a read-only property, so the call could never succeed; `raising=False` suppresses only *missing* attributes. The line was vestigial — the next line does the actual restore. Verified by mutation test that the remaining assertions still catch a truncate-and-write implementation. |
 | `tests/test_errors.py` | Exact-count registry assertion → subset relationship; registered `TaskStateError` | The assertion capped `ERROR_CODES` at twelve forever, which blocked `E_TASK_STATE` (needed by T-0015) and would have blocked every future error type. It was simply the wrong assertion — the registry is meant to grow. |
 | `tests/test_errors.py` | Module docstring rewritten (docstring only, no assertions) | It still opened *"`redgear/errors.py` does not exist yet"* and described deriving codes from prose, which §4.7 had since replaced. Misleading to any new reader. |
+| `tests/test_gates_frozen.py` | `test_frozen_gate_runs_even_when_scope_passes` rewritten and renamed to `test_modifying_a_frozen_file_fails_gate_1_and_skips_gate_2` | It asserted gate 1 would *pass* while a frozen file was modified. Impossible under a valid scope (§4.4 inv. 7 + §7.2), so the test could never pass against a correct implementation. Rewritten to assert the real behaviour rather than deleted, so the design is documented where a reader will meet it. |
+| `tests/test_gates_scope.py` | `ruff format` (formatting only) | Phase 1 ran `ruff check` but not `ruff format`, so `ruff format --check .` failed on a file frozen by Phase 2. Test count verified unchanged at 16, all still passing. |
+
+**Authorized addition** (not a defect correction):
+`tests/test_gates_frozen.py::test_deleted_frozen_file_is_reported_not_crashed`
+was added at the human's request as a named regression guard for the
+deleted-frozen-file crash described in §3. The fix alone was judged
+insufficient — the bug broke gate 2 on the single most likely way an agent
+fakes a green suite, so it warranted a test that names it.
 
 `pyproject.toml` and `.github/**` are frozen to task work but were edited twice
 under explicit authorization: to pin exact dev-tool versions and narrow the G5
@@ -340,6 +398,19 @@ Write tests to the graph node's exact selectors. **Do not create the module
 under test.** Run `pytest -q --continue-on-collection-errors` and confirm the
 RED is `ModuleNotFoundError` (or `ImportError` for a new symbol in an existing
 module) — not a typo.
+
+Before ending Phase 1, leave the new test files **lint-clean and
+format-clean**, because they cannot be touched afterwards:
+
+```bash
+ruff format tests/<new file>       # separate tool from `ruff check`
+ruff check . --no-cache
+```
+
+Also re-read each new test for vestigial lines and for assertions that
+contradict a sibling test. Five Phase-1 defects have now had to be fixed under
+authorization (§4); every one was cheap to catch here and expensive to catch
+later.
 
 **Phase 2 — `implementation`.** Writable `redgear/**`; frozen `tests/**`,
 `pyproject.toml`, `.github/**`.

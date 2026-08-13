@@ -984,6 +984,15 @@ Runs in order, **short-circuits on first failure**. Gates after the failure are 
 
 **`frozen_hash_check`** — re-expand `frozen_globs` against tracked *plus untracked* files so a newly added file under `tests/**` is caught. Compare to the digest map from the lease. Report `frozen_file_modified`, `frozen_file_deleted`, `frozen_file_added`. Report **every** violation, not just the first. This gate is the mechanical heart of G2.
 
+**On gate 2's relationship to gate 1.** For a validly-scoped task, any touch
+of a frozen path fails `scope_check` first and `frozen_hash_check` is recorded
+skipped — §4.4 invariant 7 guarantees frozen and writable globs are disjoint,
+so a frozen modification is always also an out-of-scope write. Gate 2 is
+therefore defence in depth rather than a second chance at the same check: it
+catches what gate 1's glob logic might miss, including a newly created file
+inside a frozen glob and a deleted frozen file. It rarely fires alone, and
+that is the correct behaviour, not a sign it is redundant.
+
 **`lint`** — parse the JSON diagnostics. Filter to the task's writable scope: a pre-existing violation elsewhere is not this agent's failure. Map the first 20 to structured locations.
 
 **`tests_pass`** — read the pytest JSON report. Fail on `failed > 0` or `error > 0`, or a collection failure (distinct reason `collection_error`, because the correct agent response differs entirely). **For `test_authoring` tasks the polarity inverts:** the gate passes only if the target tests exist, collected, and *failed*. Tests that already pass are a tautology → `tests_not_red`.
