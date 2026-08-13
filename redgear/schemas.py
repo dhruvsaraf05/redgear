@@ -286,6 +286,32 @@ class TaskGraph(Strict):
 # ---------------------------------------------------------------------------
 
 
+class HarnessConfig(Strict):
+    """The commands the verification harness is allowed to run.
+
+    CLAUDE.md section 7.3 is unambiguous: "No agent-supplied value reaches
+    ``cmd``. Harness commands come from ``config.json`` only." So the argv
+    vectors are *data*, supplied by the operator, and the verifier appends
+    only its own fixed isolation flags -- never anything derived from the
+    agent's output, a test name, or a file it wrote.
+
+    The commands are full argument vectors rather than tool names because a
+    bare name is not resolvable in general: in this project's own virtualenv
+    ``ruff`` is not on PATH at all and is reachable only as
+    ``python -m ruff``. A default of ``["ruff", ...]`` would look correct and
+    fail on a clean checkout.
+    """
+
+    lint_cmd: list[str]
+    test_cmd: list[str]
+    coverage_cmd: list[str]
+    #: Passed to ``coverage run --source``. Packages and directories only --
+    #: coverage.py silently collects nothing from a bare file path.
+    coverage_source: list[str]
+    coverage_floor: float = Field(default=0.85, ge=0.0, le=1.0)
+    timeout_s: int = Field(default=900, ge=1)
+
+
 class GateResult(Strict):
     name: GateName
     status: GateStatus

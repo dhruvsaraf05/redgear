@@ -7,29 +7,33 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0023 (verifier gates 1–2).*
+*Last updated: after T-0025 (verifier gates 3–6). The verification harness is
+complete.*
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0023` are done.** Next up is **`T-0024`/`T-0025` —
-`verifier.py` gates 3–6** (lint, tests_pass, criteria_coverage,
-coverage_delta), which completes the verification harness.
+**`T-0001` through `T-0025` are done.** The six-gate verification harness is
+finished, so `run_gates` can return `Verdict.PASS` for the first time. Next up
+is **`T-0026`/`T-0027` — the runner protocol and the deterministic fake
+runner** (§10.5), which is milestone 5 and unblocks the orchestrator.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **183 passed, 1 skipped** |
+| Test suite | **226 passed, 1 skipped** (was 183) |
+| Suite runtime | **~120 s idle, ~160 s under load — over NFR-6's 90 s cap. See §5.** |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (gates 1–2) |
-| Not yet built | `verifier` gates 3–6, `runner`, `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/`, `ui/` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**) |
+| Not yet built | `runner`, `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/`, `ui/` |
 | Crossover | `T-0033` (`cli.py`). Until then every task is driven manually by a human running Claude Code. |
 
-**Gates 3–6 are currently reported `skipped`, never `passed`** — a stub that
-always passes would put an unearned green in a proof. That also means
-`run_gates` can never return `Verdict.PASS` until T-0025 lands, which is
-correct and is asserted by `test_gates_three_to_six_are_not_stubbed`.
+**Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
+commands come from configuration only) and the resolved inherited criteria.
+`run_gates` takes both as *optional* arguments; without them those gates are
+recorded `skipped` with reason `no_harness_config`, never stubbed to pass.
+That default is a footgun and is written up in §2.
 
 ### Task status
 
@@ -49,8 +53,8 @@ correct and is asserted by `test_gates_three_to_six_are_not_stubbed`.
 | T-0018/19 | test/impl | done | `budget.py` — autonomy caps, STOP sentinel, signals |
 | T-0020/21 | test/impl | done | `gitctx.py` — read-only git interrogation, diff parsing |
 | T-0022/23 | test/impl | done | `verifier.py` gates 1–2 — scope check, frozen hash |
-| **T-0024/25** | test/impl | **next** | `verifier.py` gates 3–6 — lint, tests, criteria, coverage |
-| T-0026/27 | test/impl | todo | runner protocol + deterministic fake runner |
+| T-0024/25 | test/impl | done | `verifier.py` gates 3–6 — lint, tests, criteria, coverage |
+| **T-0026/27** | test/impl | **next** | runner protocol + deterministic fake runner |
 | T-0028/29 | test/impl | todo | `prompt_engine.py` — **highest risk**, snapshots mandatory |
 | T-0030/31 | test/impl | todo | `orchestrator.py` — the continuous loop |
 | T-0032/33 | test/impl | todo | `cli.py` — full command surface (**self-hosting crossover**) |
@@ -176,6 +180,61 @@ only a safety property if "outside" means "not this repository's root".
 The check is cached per resolved path, so it costs one extra git call per
 repository per process.
 
+### Gates 3–6 take their inputs as optional arguments — and that is a footgun
+
+§7.3 forbids the verifier from inventing harness commands ("Harness commands
+come from `config.json` only"), and `criteria_coverage` needs inherited
+criteria resolved from the graph, which the verifier does not read. So both
+arrive as arguments.
+
+They are **optional**, defaulting to "skip with reason `no_harness_config`".
+Two things forced that: three frozen tests from T-0022 call `run_gates` with
+the old five-argument signature, so a required parameter would be a `TypeError`
+in already-verified tests.
+
+It fails safe — a skipped gate is not a passed gate, so the verdict is `FAIL`
+and a proof can never claim a green it did not earn. But a caller that forgets
+the harness gets a confusing four-skip proof rather than a loud error. **The
+orchestrator (T-0030) must always pass a `HarnessConfig`, and nothing in the
+type system forces it to.** Worth revisiting there.
+
+### A collection error is not one thing: `import_error` is valid red, `syntax_error` is not
+
+For a `test_authoring` task, gate 4's polarity inverts and the red state during
+the manual bootstrap phase is a *collection* error, not an assertion failure —
+the tests import a module that does not exist yet.
+
+The report structure is **byte-for-byte identical** whether collection failed
+because the implementation is missing or because the test file does not parse:
+`summary` is `{total: 0, collected: 0}`, `exitcode` is 2, `tests` is empty, and
+one `collectors` entry has `outcome: "failed"`. The only difference is the
+exception type inside `longrepr`.
+
+Decision, implemented in `verifier.classify_collection_error`:
+
+- **`ModuleNotFoundError` / `ImportError` → valid red.** This is precisely the
+  state §6's two-phase protocol tells the agent to leave behind.
+- **`SyntaxError` / `IndentationError` / `TabError` → `invalid_red`.** Accepting
+  it would let an agent satisfy a `test_authoring` task by writing a file that
+  does not parse — the cheapest possible fake red.
+
+Syntax is checked first: a file that fails to compile never reaches its
+imports, so an import marker in the same text would be misleading.
+
+### `criteria_coverage` checks existence only for `test_authoring`
+
+A `test_authoring` task's cited tests are *supposed* to be red — gate 4 has
+already established that. Requiring them to pass in gate 5 would contradict
+gate 4 outright and make the pair unsatisfiable.
+
+So for `test_authoring` the gate resolves the selector but does not require a
+`passed` outcome. "I wrote that test" is still the claim worth verifying. When
+the red is a collection error there are no node ids at all, so the gate is
+skipped with a reason rather than failing every criterion.
+
+`coverage_delta` is skipped for both `scaffold` (§4.5) and `test_authoring` —
+the latter writes tests, not covered code, and its suite is red by design.
+
 ### Claude Code does not commit
 
 The human commits, every time. This is G6 (`redgear` never commits in the target
@@ -298,6 +357,94 @@ test file clean in Phase 1 says nothing about its formatting.
 **Fix:** in Phase 1, run `ruff format tests/<new file>` *and*
 `ruff check . --no-cache` before declaring the phase done.
 
+### The nested pytest inherits far more than it looks like it should
+
+**This is the trap T-0024's AC-8 was written for, and it is worse than the
+warning suggested.** Gate 4 runs pytest inside a target repository while
+redgear's own suite is under pytest. Every item below was **measured** on this
+machine, not reasoned about.
+
+| What | Result |
+| --- | --- |
+| Ancestor `pyproject.toml` | **Hijacks the child.** It walks up out of the target repo, adopts the ancestor as rootdir *and* configfile, and applies its `addopts`. A `-k` there turned a real suite into `1 deselected / 0 selected`. |
+| `--rootdir=<repo>` | **Does not fix it.** rootdir gets pinned while `configfile` still resolves to `..\pyproject.toml`, and the deselect still applies. This is the single most misleading part. |
+| `-c <configfile>` | **This** is what stops ini discovery. |
+| Ancestor `conftest.py` | Still imported even with `-c` *and* `--rootdir`. Needs **`--confcutdir=<repo>`**. |
+| `PYTEST_ADDOPTS` | Inherited and applied — exit 5, nothing collected. A scrubbed env fixes it. |
+| `.pytest_cache` | Written into the user's tree. **`-p no:cacheprovider`** prevents it. |
+
+The working recipe is all five at once (`verifier.run_harness`); dropping any
+one reintroduces a failure whose symptom — "passes alone, fails in the suite" —
+points nowhere near its cause.
+
+Two things that turned out **not** to be problems: rootdir is computed
+correctly when `cwd` is the repo and no ancestor config exists, and
+**coverage.py does not walk up** for its config (`config_files_attempted`
+showed cwd only), so the outer `[tool.coverage.run] source = ["redgear"]` never
+leaked.
+
+### CLAUDE.md §7.3's environment allowlist cannot start Python on Windows
+
+**Symptom:** the harness dies with `INTERNALERROR`, exit 3, before collecting
+anything: `OSError: [WinError 10106] The requested service provider could not
+be loaded or initialized`.
+
+**Cause:** §7.3's normative env dict is `PATH`, `HOME`, `LANG`,
+`PYTHONHASHSEED`, `PYTHONDONTWRITEBYTECODE`, `CI`, `NO_COLOR`. Without
+`SYSTEMROOT`, Python cannot initialise the Windows networking layer at
+interpreter startup.
+
+**Fix:** `verifier.harness_env` adds `SYSTEMROOT`, `SYSTEMDRIVE`, `COMSPEC`,
+`PATHEXT`, `TEMP`, `TMP` on `win32` only. None carry credentials, so G5 is
+intact. **§7.3 as written is wrong for Windows** — a scrubbed environment that
+cannot launch the harness is not a safety measure.
+
+### `coverage --source` takes packages and directories, never a file path
+
+**Symptom:** `No data was collected. (no-data-collected)` and `No data to
+report`, with a suite that demonstrably ran and passed.
+
+**Cause:** `--source=pkg.py` is silently useless. coverage.py wants a package
+name or a directory.
+
+**Fix:** the `python_repo` fixture puts the module at `src/pkg/__init__.py` and
+passes `--source=src`. Caught in Phase 1 *before* the tests froze — had it been
+caught in Phase 2 the fixture would have been unfixable without an authorized
+frozen edit.
+
+Keeping the tests outside the measured tree is also what lets a changed test
+file legitimately drop out of the coverage-delta denominator instead of scoring
+as uncovered.
+
+### `ruff` is not on PATH in this venv; only `python -m ruff` works
+
+Harness command defaults must be full argv vectors built from `sys.executable`.
+A `["ruff", "check", ...]` default looks right and fails on a clean checkout.
+This is why `HarnessConfig` has no defaults for the three command vectors.
+
+### pytest collects any imported name matching `test*`
+
+**Symptom:** `ERROR at setup of tests_pass_check` — `fixture 'task' not found`,
+pointing at a line in `redgear/verifier.py`.
+
+**Cause:** `verifier.tests_pass_check` matches pytest's default
+`python_functions = test*`. Any test module that *imports* it has it collected
+as a test. The name mirrors `GateName.TESTS_PASS` alongside `scope_check` and
+`lint_check`, and the importing test modules are frozen under G2, so neither
+end could be renamed.
+
+**Fix:** `setattr(tests_pass_check, "__test__", False)` in `verifier.py`.
+`setattr` rather than direct assignment because mypy strict rejects an
+attribute it cannot see on a `Callable`, and NFR-5 forbids suppressions.
+
+### coverage JSON and ruff JSON both use native path separators
+
+coverage keys `files` by `src\pkg\__init__.py` on Windows; ruff reports
+`filename` as an **absolute** native path. Git always emits POSIX-relative
+paths. Without normalisation the changed set and the coverage data never
+intersect — every denominator is empty and `coverage_delta` silently passes
+everything, which is indistinguishable from a working gate until you look.
+
 ### `list` is invariant; `list[str]` does not satisfy `list[JsonValue]`
 
 **Symptom:** mypy rejects `detail={"k": sorted(x)}`; rewriting as a
@@ -337,9 +484,57 @@ fakes a green suite, so it warranted a test that names it.
 under explicit authorization: to pin exact dev-tool versions and narrow the G5
 greps, and to add the two isort settings above.
 
+**T-0024/T-0025 required no frozen-file edits.** The two defects that would
+have forced one — `coverage --source` rejecting a file path, and the
+`tests_pass_check` collection collision — were both caught before the tests
+froze, or fixed entirely inside `redgear/`. The §6 discipline of re-reading
+each new test file before ending Phase 1 is what caught the first.
+
 ---
 
 ## 5. Open questions — need a human decision
+
+### The suite is ~120 s; NFR-6 caps it at 90 s
+
+**This is a live breach of an acceptance criterion**, introduced by T-0024.
+The suite went 183 → 226 tests and ~28 s → ~120 s. The new time is almost
+entirely subprocess launches: 43 gate tests, each spawning at least one nested
+pytest, and the ten coverage tests spawning `coverage run -m pytest` plus
+`coverage json` at ~5 s apiece.
+
+`-p no:cov` in the child argv bought roughly 10%. The rest is interpreter and
+plugin startup, and it does not compress much further.
+
+§10.5 says "If it slows, shrink the fixture repo, not the scenario list." The
+fixture is already three small files. The real lever is **sharing one
+`run_harness` result across tests that only differ in assertions** — but those
+tests are frozen now, so that is a T-0026-or-later change requiring authorized
+edits, not something to smuggle in.
+
+Options: accept and amend NFR-6; restructure the gate tests under
+authorization; or mark the subprocess-heavy ones slow and exclude them from the
+default run. **Needs a call — it is a "must" priority criterion.**
+
+### `test_gates_three_to_six_are_not_stubbed` still passes, but its docstring is now false
+
+The test (`tests/test_gates_scope.py:332`, frozen, from T-0022) asserts gates
+3–6 are `SKIPPED` and the verdict is `FAIL`. **All of its assertions still
+hold**, because it calls `run_gates` without a `HarnessConfig` and those gates
+skip with `no_harness_config`.
+
+Its *docstring* says "Gates 3–6 arrive at T-0025. Until then they must be
+reported as not run." That reason is now stale — they have arrived, and the
+skip means something different.
+
+Worth being straight about: the frozen test constrained the design here.
+Absent it, a required `harness` parameter would be the better API, because
+silently skipping four of six gates is a poor default for a verification
+engine (see §2). The optional form is defensible on its own merits — the gates
+genuinely cannot run without configured commands — but it was not a free
+choice.
+
+**Recommend a docstring-only edit** under authorization, matching the
+precedent already in §4 for `tests/test_errors.py`. Not done unilaterally.
 
 ### `spec.json` says Python 3.11; everything else says 3.12
 
@@ -411,6 +606,14 @@ Also re-read each new test for vestigial lines and for assertions that
 contradict a sibling test. Five Phase-1 defects have now had to be fixed under
 authorization (§4); every one was cheap to catch here and expensive to catch
 later.
+
+Where a new test needs a real repository to run tools against, add a **fixture
+to `tests/conftest.py`** rather than an importable helper module. Fixtures are
+injected by name, so there is no import statement for isort to classify — and
+therefore no way to hit the Phase-1/Phase-2 classification flip above. Keep
+`conftest.py` free of `redgear` imports: a symbol that does not exist yet would
+fail collection for the **whole suite**, hiding the real red instead of showing
+it.
 
 **Phase 2 — `implementation`.** Writable `redgear/**`; frozen `tests/**`,
 `pyproject.toml`, `.github/**`.
