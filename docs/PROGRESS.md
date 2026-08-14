@@ -7,26 +7,27 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0025 (verifier gates 3–6). The verification harness is
-complete.*
+*Last updated: after T-0027 (runner protocol + fake runner). Milestone 5 is
+done; the test rig every later pair depends on now exists.*
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0025` are done.** The six-gate verification harness is
-finished, so `run_gates` can return `Verdict.PASS` for the first time. Next up
-is **`T-0026`/`T-0027` — the runner protocol and the deterministic fake
-runner** (§10.5), which is milestone 5 and unblocks the orchestrator.
+**`T-0001` through `T-0027` are done.** The six-gate verification harness is
+finished and the deterministic test rig is in place. Next up is
+**`T-0028`/`T-0029` — `prompt_engine.py`**, flagged in §12.1 as the project's
+**highest-risk pair**: silent failure mode, snapshots mandatory.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **226 passed, 1 skipped** (was 183) |
-| Suite runtime | **~120 s idle, ~160 s under load — over NFR-6's 90 s cap. See §5.** |
+| Test suite | **252 passed, 1 skipped** (was 226) |
+| Suite runtime | **~125 s idle, ~165 s under load — over NFR-6's 90 s cap. See §5.** The 26 fake-runner tests add ~5 s; they spawn nothing. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**) |
-| Not yet built | `runner`, `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/`, `ui/` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol) |
+| Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
+| Not yet built | `prompt_engine`, `orchestrator`, `cli`, `runner` adapter, `planner`, `api/`, `ui/` |
 | Crossover | `T-0033` (`cli.py`). Until then every task is driven manually by a human running Claude Code. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
@@ -54,8 +55,8 @@ That default is a footgun and is written up in §2.
 | T-0020/21 | test/impl | done | `gitctx.py` — read-only git interrogation, diff parsing |
 | T-0022/23 | test/impl | done | `verifier.py` gates 1–2 — scope check, frozen hash |
 | T-0024/25 | test/impl | done | `verifier.py` gates 3–6 — lint, tests, criteria, coverage |
-| **T-0026/27** | test/impl | **next** | runner protocol + deterministic fake runner |
-| T-0028/29 | test/impl | todo | `prompt_engine.py` — **highest risk**, snapshots mandatory |
+| T-0026/27 | test/impl | done | runner protocol + deterministic fake runner |
+| **T-0028/29** | test/impl | **next** | `prompt_engine.py` — **highest risk**, snapshots mandatory |
 | T-0030/31 | test/impl | todo | `orchestrator.py` — the continuous loop |
 | T-0032/33 | test/impl | todo | `cli.py` — full command surface (**self-hosting crossover**) |
 | T-0034/35 | test/impl | todo | `runner.py` — Claude Code headless adapter (needs an agent CLI) |
@@ -234,6 +235,45 @@ skipped with a reason rather than failing every criterion.
 
 `coverage_delta` is skipped for both `scaffold` (§4.5) and `test_authoring` —
 the latter writes tests, not covered code, and its suite is red by design.
+
+### Fake-runner scenarios are data, not functions — a deliberate §2.2 deviation
+
+§2.2 sketches `scenarios.py` as "one function per agent behaviour". It is
+written as **one frozen dataclass per behaviour** in a registry instead.
+
+§10.5 needs ~23 behaviours and T-0030 needs all of them at once. As functions
+they would be 23 near-identical bodies differing in a path string and an enum,
+and every new question the orchestrator wants to ask — *what did it declare?
+did it lie?* — would mean editing all 23. As data a behaviour is a row, and the
+one place that interprets it (`apply_scenario`) is ~20 lines.
+
+The lie surface is explicit fields: `omits_from_declaration` produces
+`undeclared_change`, `declares_extra` produces `phantom_change`. Encoding them
+as data means the fake **cannot accidentally tell the truth** — the declaration
+and the patch are computed from the same record.
+
+12 of §10.5's scenarios are expressible this way and all 12 exist. The
+remainder (`retry_then_succeed`, `exhausts_attempts`, `stop_mid_run`,
+`budget_exhausted`, `consecutive_failures`, `dispatch_timeout`) are *loop*
+behaviours, not turn behaviours: they are a **sequence** of scenarios. That is
+why `FakeRunner` takes varargs and the last entry repeats — fail-then-pass and
+same-failure-three-times both fall out of it without T-0030 needing to know how
+the fake is wired.
+
+`FakeRunner.calls` records every dispatch. Without it, T-0030 has nowhere to
+assert that prompt 2 carries the failure excerpt, or that `allowed_tools` never
+contains a bare `Bash`.
+
+### `Runner` is `@runtime_checkable`, and that buys less than it looks like
+
+`isinstance` against a runtime-checkable Protocol checks **method names only**,
+never signatures. A fake whose `dispatch` took different parameters passes
+`isinstance` and then fails the moment the orchestrator calls it by keyword.
+So `tests/test_fake_runner.py` compares `inspect.signature` explicitly as well.
+
+Signature conformance is otherwise a static property, enforced by
+`mypy --strict` at the call sites — which is why the orchestrator being *typed*
+against `Runner` (NFR-8) is the real guarantee, not the isinstance check.
 
 ### Claude Code does not commit
 
@@ -445,6 +485,41 @@ paths. Without normalisation the changed set and the coverage data never
 intersect — every denominator is empty and `coverage_delta` silently passes
 everything, which is indistinguishable from a working gate until you look.
 
+### `issubclass` against a runtime-checkable Protocol is *structural*, and returns True
+
+**Symptom:** a test asserting "the fake does not inherit from the protocol"
+written as `assert not issubclass(FakeRunner, Runner)` fails — `issubclass`
+returns `True`.
+
+**Cause:** for a method-only `@runtime_checkable` Protocol, `issubclass`
+performs the same structural check `isinstance` does. It says nothing about
+inheritance.
+
+**Fix:** ask the MRO instead — `assert Runner not in FakeRunner.__mro__`. Both
+assertions together are the informative pair: structurally yes, nominally no.
+
+Caught by re-reading Phase 1 before the file froze. Had it survived, the
+correct fix would have required an authorized frozen edit.
+
+### A missing trailing comma turns a one-element tuple into a bare value
+
+`edits=(FileEdit("tests/test_pkg.py", "..."))` is a `FileEdit`, not a
+`tuple[FileEdit, ...]`. Nothing complains — the dataclass is not validated, and
+the scenario would have iterated the *fields* of the object at runtime. Frozen
+dataclasses buy immutability, not the input validation Pydantic gives at a
+boundary. Worth a second look at every single-element tuple literal in a
+scenario table.
+
+### `tests/fake_runner/` uses relative imports on purpose
+
+`tests/` has no `__init__.py`, so `tests.fake_runner` is not importable —
+pytest puts `tests/` on `sys.path` and the package resolves as `fake_runner`.
+Inside the package, `from .scenarios import ...` sidesteps the question
+entirely and is stable under isort: a relative import is always `local-folder`,
+so it cannot suffer the Phase-1/Phase-2 classification flip described above.
+`no-lines-before` means it sits directly under the `redgear` import with no
+blank line.
+
 ### `list` is invariant; `list[str]` does not satisfy `list[JsonValue]`
 
 **Symptom:** mypy rejects `detail={"k": sorted(x)}`; rewriting as a
@@ -472,6 +547,7 @@ names the defect that justified it.
 | `tests/test_errors.py` | Module docstring rewritten (docstring only, no assertions) | It still opened *"`redgear/errors.py` does not exist yet"* and described deriving codes from prose, which §4.7 had since replaced. Misleading to any new reader. |
 | `tests/test_gates_frozen.py` | `test_frozen_gate_runs_even_when_scope_passes` rewritten and renamed to `test_modifying_a_frozen_file_fails_gate_1_and_skips_gate_2` | It asserted gate 1 would *pass* while a frozen file was modified. Impossible under a valid scope (§4.4 inv. 7 + §7.2), so the test could never pass against a correct implementation. Rewritten to assert the real behaviour rather than deleted, so the design is documented where a reader will meet it. |
 | `tests/test_gates_scope.py` | `ruff format` (formatting only) | Phase 1 ran `ruff check` but not `ruff format`, so `ruff format --check .` failed on a file frozen by Phase 2. Test count verified unchanged at 16, all still passing. |
+| `tests/test_gates_scope.py` | `test_gates_three_to_six_are_not_stubbed` **docstring only**, no assertions touched | Its text still read *"Gates 3-6 arrive at T-0025. Until then…"*, which became false when they landed. The assertions were always correct and are unchanged — what the test guards is now stated accurately: `run_gates` without a `HarnessConfig` skips gates 3-6 with reason `no_harness_config` rather than passing them. Authorized in-session at T-0026. |
 
 **Authorized addition** (not a defect correction):
 `tests/test_gates_frozen.py::test_deleted_frozen_file_is_reported_not_crashed`
@@ -494,13 +570,14 @@ each new test file before ending Phase 1 is what caught the first.
 
 ## 5. Open questions — need a human decision
 
-### The suite is ~120 s; NFR-6 caps it at 90 s
+### The suite is ~125 s; NFR-6 caps it at 90 s
 
-**This is a live breach of an acceptance criterion**, introduced by T-0024.
-The suite went 183 → 226 tests and ~28 s → ~120 s. The new time is almost
-entirely subprocess launches: 43 gate tests, each spawning at least one nested
-pytest, and the ten coverage tests spawning `coverage run -m pytest` plus
-`coverage json` at ~5 s apiece.
+**This is a live breach of an acceptance criterion**, introduced by T-0024 and
+untouched since. The suite went 183 → 226 tests and ~28 s → ~120 s there; T-0026
+added 26 more tests for ~5 s, because the fake runner spawns nothing. The
+overage is almost entirely subprocess launches in the *gate* tests: 43 of them,
+each spawning at least one nested pytest, and the ten coverage tests spawning
+`coverage run -m pytest` plus `coverage json` at ~5 s apiece.
 
 `-p no:cov` in the child argv bought roughly 10%. The rest is interpreter and
 plugin startup, and it does not compress much further.
@@ -514,27 +591,6 @@ edits, not something to smuggle in.
 Options: accept and amend NFR-6; restructure the gate tests under
 authorization; or mark the subprocess-heavy ones slow and exclude them from the
 default run. **Needs a call — it is a "must" priority criterion.**
-
-### `test_gates_three_to_six_are_not_stubbed` still passes, but its docstring is now false
-
-The test (`tests/test_gates_scope.py:332`, frozen, from T-0022) asserts gates
-3–6 are `SKIPPED` and the verdict is `FAIL`. **All of its assertions still
-hold**, because it calls `run_gates` without a `HarnessConfig` and those gates
-skip with `no_harness_config`.
-
-Its *docstring* says "Gates 3–6 arrive at T-0025. Until then they must be
-reported as not run." That reason is now stale — they have arrived, and the
-skip means something different.
-
-Worth being straight about: the frozen test constrained the design here.
-Absent it, a required `harness` parameter would be the better API, because
-silently skipping four of six gates is a poor default for a verification
-engine (see §2). The optional form is defensible on its own merits — the gates
-genuinely cannot run without configured commands — but it was not a free
-choice.
-
-**Recommend a docstring-only edit** under authorization, matching the
-precedent already in §4 for `tests/test_errors.py`. Not done unilaterally.
 
 ### `spec.json` says Python 3.11; everything else says 3.12
 

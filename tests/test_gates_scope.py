@@ -330,9 +330,19 @@ def test_gate_order_matches_section_7_1() -> None:
 
 
 def test_gates_three_to_six_are_not_stubbed(git_repo: Path) -> None:
-    """Gates 3-6 arrive at T-0025. Until then they must be reported as not
-    run -- never as passing. A stub that always passes is worse than an
-    absent gate, because a proof would show a green it never earned."""
+    """Gates 3-6 execute configured commands, so without a ``HarnessConfig``
+    they cannot run -- and must say so rather than pass.
+
+    Section 7.3 forbids the verifier from inventing harness commands; they
+    come from configuration only. ``run_gates`` therefore takes the harness as
+    an optional argument, and this call omits it. The gates are recorded
+    ``skipped`` with reason ``no_harness_config``, and because a skipped gate
+    is not a passed gate the verdict is FAIL.
+
+    That is the property worth pinning: a gate whose inputs are missing must
+    never be reported as green. A stub that always passes is worse than an
+    absent gate, because a proof would show a verdict it never earned.
+    """
     claim = _claim(git_repo)
     task = _task(writable=["src/**"])
     (git_repo / "src" / "pkg" / "__init__.py").write_text("a = 1\n", encoding="utf-8")

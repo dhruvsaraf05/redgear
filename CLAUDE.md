@@ -1007,6 +1007,7 @@ Mandatory. Violating any of these is a security bug, not a style issue.
 
 ```python
 def run_command(cmd: list[str], cwd: str, timeout_s: int) -> CommandResult:
+    # The portable FLOOR, not an exhaustive list. See the platform note below.
     env = {
         "PATH": os.environ.get("PATH", ""),
         "HOME": os.environ.get("HOME", ""),
@@ -1021,9 +1022,50 @@ def run_command(cmd: list[str], cwd: str, timeout_s: int) -> CommandResult:
 
 - `shell=False` always. No `os.system`, no `shell=True`, no string commands.
 - **No agent-supplied value reaches `cmd`.** Harness commands come from `config.json` only.
-- **Scrubbed environment for harness commands.** Only the variables above. This keeps the user's API key out of the test process — a malicious test in a target repo must not be able to read `os.environ["ANTHROPIC_API_KEY"]`. Note this differs from the *agent* subprocess (§6), which needs the full environment to authenticate.
+- **Scrubbed environment for harness commands.** Allowlist only. This keeps the user's API key out of the test process — a malicious test in a target repo must not be able to read `os.environ["ANTHROPIC_API_KEY"]`. Note this differs from the *agent* subprocess (§6), which needs the full environment to authenticate.
 - Every command has a timeout. A timeout is a gate failure with reason `timeout`, not an exception that kills the run.
 - Reject any configured `cmd` containing `..`.
+
+**The allowlist is a floor, extended per-platform.** The dictionary above is
+the portable minimum, not a literal exhaustive list. On Windows it is
+insufficient to start a Python interpreter at all: without `SYSTEMROOT` the
+runtime cannot initialise the platform networking layer and dies with
+`OSError: [WinError 10106]` before running anything — the harness reports an
+INTERNALERROR and exit 3, which looks like a broken test suite rather than a
+broken environment. `win32` therefore adds `SYSTEMROOT`, `SYSTEMDRIVE`,
+`COMSPEC`, `PATHEXT`, `TEMP` and `TMP`.
+
+None of those carry credentials, so G5 is intact — the guarantee is that no
+auth value reaches the harness process, not that the dictionary has exactly
+seven keys. A scrubbed environment that cannot launch the harness is not a
+safety measure. When adding a variable, the test is "could this carry a
+secret?", not "is it in the list above".
+
+**Nested-runner isolation — mandatory when the harness runs pytest.**
+
+The harness runs pytest inside a target repository, frequently while redgear's
+own suite is running under pytest. The child inherits far more than it appears
+to, and the symptom — "passes alone, fails in the suite", or a green run that
+collected nothing — points nowhere near the cause. Five things are required,
+and dropping any one reintroduces a distinct failure:
+
+| Flag | Stops |
+| --- | --- |
+| `-c <configfile>` | Upward `pyproject.toml`/ini discovery walking **out of** the target repo |
+| `--rootdir <repo>` | A misreported rootdir and unstable node ids |
+| `--confcutdir <repo>` | An ancestor `conftest.py` being imported |
+| `-p no:cacheprovider` | `.pytest_cache` being written into the user's tree |
+| Scrubbed env (above) | `PYTEST_ADDOPTS` from the outer session rewriting the child's argv |
+
+**`--rootdir` alone does not stop config discovery.** This is the trap: it
+pins the reported rootdir while `configfile` still resolves to the ancestor,
+whose `addopts` still apply. A stray `-k` in a parent directory's config turns
+a real suite into `0 selected` with no error anywhere. Only `-c` prevents it,
+so the harness always passes a config file — the repository's own when it has
+one, an inert generated one when it does not.
+
+Write the JSON report **inside the target repo**, never to a shared path, or a
+nested run overwrites the outer session's own report.
 
 ### 7.4 Git diff computation
 
