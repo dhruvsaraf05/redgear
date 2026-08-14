@@ -65,7 +65,7 @@ from redgear import gitctx
 from redgear.budget import terminate_process_tree
 from redgear.errors import JsonValue, UnsafeHarnessCommandError
 from redgear.hashing import digest_map
-from redgear.paths import match_glob, matches_any
+from redgear.paths import is_state_path, match_glob, matches_any
 from redgear.schemas import (
     AcceptanceCriterion,
     Claim,
@@ -334,7 +334,13 @@ def scope_check(
     trusted about anything else in the same submission.
     """
     changed = gitctx.changed_files(repo_root, claim.base_commit)
-    actual = {entry.path: entry for entry in changed}
+    # redgear's own state directory is not agent work. The loop writes the
+    # event log, the projection and the persisted prompt *between* the claim
+    # and this audit, so every one of those would otherwise surface as an
+    # `out_of_scope_write` and fail every task ever run. Excluded here rather
+    # than in `gitctx`, which is a general-purpose reader with no business
+    # knowing redgear's own layout.
+    actual = {entry.path: entry for entry in changed if not is_state_path(entry.path)}
     declared_paths = {_posix(path) for path in declared}
 
     reasons: list[str] = []

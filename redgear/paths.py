@@ -154,8 +154,34 @@ def assert_no_scope_overlap(
 # ---------------------------------------------------------------------------
 
 
+#: The state directory's name, as it appears in a repo-relative path.
+STATE_DIR_NAME = ".redgear"
+
+
 def redgear_dir(repo_root: Path) -> Path:
-    return repo_root / ".redgear"
+    return repo_root / STATE_DIR_NAME
+
+
+def is_state_path(path: str) -> bool:
+    """Is this repo-relative path inside redgear's own state directory?
+
+    Needed in two places that both audit the working tree, and wrong in both
+    if it is missing. `.redgear/` is committed to the target repo on purpose
+    -- it *is* the audit trail -- so every write redgear makes during a run
+    shows up as a real git change:
+
+    * The run lock, the event log, the projection and the persisted prompt all
+      land between the claim and the verification, so the scope gate would
+      report each as an `out_of_scope_write` and fail every task ever run.
+    * The run lock is taken before the section 8.4 dirty-tree check, so a run
+      would refuse to start on the dirt it just created.
+
+    Neither is agent work, and neither is user work. Excluding it here rather
+    than in `gitctx` keeps that module a general-purpose reader with no
+    knowledge of redgear's own layout.
+    """
+    normalised = path.replace("\\", "/").strip()
+    return normalised == STATE_DIR_NAME or normalised.startswith(STATE_DIR_NAME + "/")
 
 
 def config_path(repo_root: Path) -> Path:

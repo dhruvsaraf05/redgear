@@ -92,7 +92,12 @@ def test_all_codes_have_classes() -> None:
     blocked E_TASK_STATE and E_NO_READY_TASK from being registered at all.
     """
     documented = _section_4_7_codes()
-    assert len(documented) == 20, f"section 4.7 table did not parse as expected: {documented}"
+    # 19 since T-0031, when `E_NO_READY_TASK` was struck from section 4.7: its
+    # own "correct response" column read "run ends complete_or_blocked", and a
+    # code whose documented handling is "terminate normally" is a control-flow
+    # signal rather than an error. This number is a parse sanity check on the
+    # table, not a cap on the taxonomy -- update it with the table.
+    assert len(documented) == 19, f"section 4.7 table did not parse as expected: {documented}"
 
     codes = [cls.code for cls in ALL_ERROR_CLASSES]
     assert len(codes) == len(set(codes)), f"duplicate codes: {codes}"

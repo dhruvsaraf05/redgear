@@ -43,7 +43,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
-from redgear.schemas import TurnResult
+from redgear.schemas import TaskNode, TurnResult
 
 
 @runtime_checkable
@@ -97,3 +97,40 @@ class Runner(Protocol):
         what makes drift diagnosable rather than mysterious (section 2.4).
         """
         ...
+
+
+#: Always granted. Reading the repository cannot violate a scope guarantee,
+#: and an agent that cannot read cannot work.
+_READ_ONLY_TOOLS = ("Read", "Glob", "Grep")
+
+#: Granted to task types that produce files.
+_WRITE_TOOLS = ("Edit", "Write")
+
+
+def allowed_tools_for(task: TaskNode) -> list[str]:
+    """The permission allowlist for one task, derived from its scope.
+
+    Section 8.2 puts this helper here rather than in the orchestrator, because
+    it is about what an agent CLI is permitted to do -- the same reason argv
+    construction lives in this module.
+
+    Two rules, both absolute:
+
+    * **Never a bare ``Bash``.** An unrestricted shell defeats every scope
+      guarantee at once, because the agent can write any file with it and the
+      allowlist stops meaning anything. Where a task genuinely needs a shell,
+      it gets specific prefixes such as ``Bash(git status *)`` -- and the
+      space before ``*`` is significant (section 6.2).
+    * **Never ``--dangerously-skip-permissions``.** There is no configuration
+      that enables it (section 11.1 rule 3).
+
+    The write tools are granted on task type rather than on glob contents: a
+    task with no writable globs has nothing to write, and one with any has to
+    be able to write it. The *enforcement* of which paths is the verifier's
+    job (G2) -- this is the "instruct, then constrain, then verify" middle
+    step, not the guarantee itself.
+    """
+    tools = list(_READ_ONLY_TOOLS)
+    if task.scope.writable_globs or task.scope.creatable_globs:
+        tools.extend(_WRITE_TOOLS)
+    return tools

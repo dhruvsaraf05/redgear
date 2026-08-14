@@ -20,6 +20,7 @@ widened event, which is an ADR-worthy change to section 3.6.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -37,8 +38,25 @@ from redgear.errors import (
 )
 from redgear.events import append as append_event
 from redgear.hashing import digest_map
-from redgear.paths import events_path, find_scope_overlaps, match_glob, task_graph_path
-from redgear.schemas import Claim, Escalation, Event, GateName, TaskGraph, TaskNode
+from redgear.paths import (
+    events_path,
+    find_scope_overlaps,
+    match_glob,
+    redgear_dir,
+    task_graph_path,
+)
+from redgear.schemas import (
+    Budget,
+    Claim,
+    Escalation,
+    Event,
+    GateName,
+    PriorAttempt,
+    TaskGraph,
+    TaskNode,
+    TurnOutcome,
+    TurnResult,
+)
 
 #: States recomputation may move between. Everything else has already left the
 #: queue -- recomputing a `verified` node back to `ready` would re-run proven
@@ -234,9 +252,19 @@ def next_ready_task(graph: TaskGraph) -> TaskNode | None:
     log.
 
     Returns None rather than raising, matching section 4.1's loop skeleton
-    (``if task is None: ... "complete_or_blocked"``).
+    (``if task is None: ...``). Exhaustion is how a run *ends*, not an error --
+    see the T-0031 note in docs/PROGRESS.md and section 4.3's `complete` and
+    `blocked` terminations.
+
+    Selects anything **claimable**, which is `ready` *or* `rejected`. A
+    rejected task is a task that failed a gate and still has attempts left,
+    and `_CLAIMABLE_FROM` already admits it. Leaving it out here would strand
+    it forever: `recompute_readiness` deliberately does not touch `rejected`
+    (it must not resurrect a task that left the queue), so nothing else would
+    ever put it back. Including it is also what keeps the retry path free of a
+    special case in the orchestrator -- a retry is just the next selection.
     """
-    ready = [node for node in graph.nodes if node.state == _READY]
+    ready = [node for node in graph.nodes if node.state in _CLAIMABLE_FROM]
     if not ready:
         return None
     ready.sort(key=lambda node: (-len(node.depends_on), node.id))
@@ -282,8 +310,27 @@ def replay_graph(definition: TaskGraph, events: Sequence[Event]) -> TaskGraph:
                 }
             )
         elif event.event == "task_rejected":
+            # `prior_attempts` is G4-reconstructible state (section 1.4), so it
+            # is rebuilt here from exactly what the event carries. Anything the
+            # projection held that the log does not would make every `rebuild`
+            # report divergence.
+            history = [
+                *node.prior_attempts,
+                PriorAttempt(
+                    attempt_number=event.attempt,
+                    outcome=TurnOutcome.COMPLETED,
+                    failed_gate=GateName(event.failed_gates[0]) if event.failed_gates else None,
+                    failure_excerpt=event.summary,
+                    recorded_at=event.ts,
+                ),
+            ]
             mutated[task_id] = node.model_copy(
-                update={"state": "rejected", "attempts": event.attempt, "claim": None}
+                update={
+                    "state": "rejected",
+                    "attempts": event.attempt,
+                    "claim": None,
+                    "prior_attempts": history,
+                }
             )
         elif event.event == "task_escalated":
             mutated[task_id] = node.model_copy(update={"state": "escalated", "claim": None})
@@ -513,18 +560,46 @@ def reject_task(
     summary: str,
 ) -> TaskGraph:
     """A gate failed. This DOES consume an attempt -- which is what makes
-    G3's exemption for an honest exit mean anything."""
+    G3's exemption for an honest exit mean anything.
+
+    The attempt is appended to ``prior_attempts``, and that record is the
+    entire mechanism behind the corrective retry: ``prompt_engine`` composes a
+    different prompt next time because it can *see* the failure here, not
+    because the orchestrator branched on one.
+
+    ``summary`` carries the section 5.5 failure excerpt, formatted by the
+    prompt engine and passed in -- this module stores it, it does not compose
+    it. It is deliberately the *same* string in the event and in the stored
+    ``PriorAttempt``, because G4 requires the projection to be reconstructible
+    from the log: a second field held only in the projection could not be
+    replayed, and `rebuild` would report divergence forever.
+    """
     node = _require(graph, task_id)
     _require_state(node, _REJECTABLE_FROM, "reject")
 
     attempts = node.attempts + 1
     now = _utc_now()
     gates: list[JsonValue] = list(failed_gates)
+    history = [
+        *node.prior_attempts,
+        PriorAttempt(
+            attempt_number=attempts,
+            outcome=TurnOutcome.COMPLETED,
+            failed_gate=GateName(failed_gates[0]) if failed_gates else None,
+            failure_excerpt=summary,
+            recorded_at=now,
+        ),
+    ]
     return _commit_transition(
         repo_root,
         graph,
         node,
-        {"state": "rejected", "attempts": attempts, "claim": None},
+        {
+            "state": "rejected",
+            "attempts": attempts,
+            "claim": None,
+            "prior_attempts": history,
+        },
         {
             "event": "task_rejected",
             "ts": _stamp(now),
@@ -582,5 +657,159 @@ def escalate_task(
             "detail": detail,
             # Attempts actually spent -- unchanged by an honest exit (G3).
             "attempted": node.attempts,
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Run lifecycle and prompt persistence (T-0031)
+#
+# The orchestrator owns control flow, not writes. Everything below exists so
+# the loop can record a run without opening `.redgear/` itself (section 11.1
+# rule 4).
+# ---------------------------------------------------------------------------
+
+
+def _run_dir(repo_root: Path, run_id: str) -> Path:
+    return redgear_dir(repo_root) / "runs" / run_id
+
+
+def start_run(repo_root: Path, budget: Budget, *, actor: str = "engine") -> str:
+    """Open a run: append `run_started` and return the run id.
+
+    The id is derived from the wall clock rather than randomly, so a run
+    directory sorts chronologically and a human reading `.redgear/runs/` can
+    tell which is which without opening anything.
+    """
+    now = _utc_now()
+    run_id = "run_" + now.strftime("%Y%m%dT%H%M%S%f")
+    _run_dir(repo_root, run_id).mkdir(parents=True, exist_ok=True)
+
+    append_event(
+        events_path(repo_root),
+        {
+            "event": "run_started",
+            "ts": _stamp(now),
+            "actor": actor,
+            "run_id": run_id,
+            "budget": budget.model_dump(mode="json"),
+            "base_commit": _git(repo_root, "rev-parse", "HEAD"),
+        },
+    )
+    return run_id
+
+
+def end_run(
+    repo_root: Path,
+    run_id: str,
+    *,
+    reason: str,
+    iterations: int,
+    tasks_verified: int,
+    tasks_escalated: int,
+    duration_ms: int,
+    actor: str = "engine",
+) -> None:
+    """Close a run: exactly one `run_ended`, whatever the termination.
+
+    ``reason`` is one of section 4.3's six. The event schema enumerates
+    exactly those, so an invalid reason fails validation here rather than
+    silently producing an unreadable log.
+    """
+    append_event(
+        events_path(repo_root),
+        {
+            "event": "run_ended",
+            "ts": _stamp(_utc_now()),
+            "actor": actor,
+            "run_id": run_id,
+            "reason": reason,
+            "iterations": iterations,
+            "tasks_verified": tasks_verified,
+            "tasks_escalated": tasks_escalated,
+            "duration_ms": duration_ms,
+        },
+    )
+
+
+def persist_prompt(
+    repo_root: Path,
+    run_id: str,
+    iteration: int,
+    prompt: str,
+    *,
+    task_id: str,
+    attempt: int,
+    allowed_tools: Sequence[str],
+    actor: str = "engine",
+) -> Path:
+    """Write the prompt to disk, then record that it was dispatched.
+
+    G4 and section 11.1 rule 6: never dispatch a prompt before persisting it.
+    "Every prompt redgear sends is persisted verbatim before dispatch. A run
+    you cannot read back prompt-by-prompt is not auditable, and auditability
+    is the product."
+
+    The `prompt_sha256` on the event is what makes that verifiable rather than
+    asserted -- the file can be re-hashed and matched against the log.
+    """
+    directory = _run_dir(repo_root, run_id) / "iterations" / f"{iteration:04d}"
+    directory.mkdir(parents=True, exist_ok=True)
+    path = directory / "prompt.txt"
+
+    payload = prompt.encode("utf-8")
+    temp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    try:
+        with temp_path.open("wb") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, path)  # noqa: PTH105
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+
+    tools: list[JsonValue] = []
+    tools.extend(allowed_tools)
+    append_event(
+        events_path(repo_root),
+        {
+            "event": "prompt_dispatched",
+            "ts": _stamp(_utc_now()),
+            "actor": actor,
+            "task_id": task_id,
+            "attempt": attempt,
+            "prompt_path": str(path.relative_to(repo_root)).replace("\\", "/"),
+            "prompt_sha256": "sha256:" + hashlib.sha256(payload).hexdigest(),
+            "allowed_tools": tools,
+        },
+    )
+    return path
+
+
+def record_turn(
+    repo_root: Path,
+    *,
+    task_id: str,
+    attempt: int,
+    result: TurnResult,
+    duration_ms: int = 0,
+    actor: str = "engine",
+) -> None:
+    """Append `turn_completed` once the agent process has exited."""
+    append_event(
+        events_path(repo_root),
+        {
+            "event": "turn_completed",
+            "ts": _stamp(_utc_now()),
+            "actor": actor,
+            "task_id": task_id,
+            "attempt": attempt,
+            "outcome": result.outcome.value,
+            "exit_code": result.exit_code,
+            "num_turns": result.num_turns,
+            "duration_ms": duration_ms,
+            "cost_usd_estimate": result.cost_usd_estimate,
+            "parse_ok": result.parse_ok,
         },
     )

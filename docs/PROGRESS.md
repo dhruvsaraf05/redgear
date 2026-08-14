@@ -7,27 +7,29 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0029 (prompt_engine). The highest-risk module is done;
-everything milestone 9 needs now exists except the loop itself.*
+*Last updated: after T-0031 (orchestrator). The loop runs end to end and the
+suite is green.*
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0029` are done.** Next up is **`T-0030`/`T-0031` —
-`orchestrator.py`**, the continuous loop. Every input it needs is now built:
-gates, the fake runner, and the prompt engine.
+**`T-0001` through `T-0031` are done.** redgear now selects, composes,
+dispatches, verifies and decides without a human in the relay — the loop from
+§4.1 runs end to end against the fake runner and against the real six-gate
+pipeline. Next up is **`T-0032`/`T-0033` — `cli.py`**, the self-hosting
+crossover.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **284 passed, 1 skipped** (was 252) |
+| Test suite | **311 passed, 1 skipped** (was 284) |
 | Suite runtime | **83 s on an idle machine, ~125 s under load.** Inside NFR-6's 90 s cap when nothing competes; see §5, the earlier "over cap" figures were measured against a busy machine. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol), `prompt_engine` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol), `prompt_engine`, `orchestrator` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
 | Golden prompts | `tests/snapshots/` — 5 files. A prompt change is now a reviewable diff. |
-| Not yet built | `orchestrator`, `cli`, `runner` adapter, `planner`, `api/`, `ui/` |
+| Not yet built | `cli`, `runner` adapter, `planner`, `api/`, `ui/` |
 | Crossover | `T-0033` (`cli.py`). Until then every task is driven manually by a human running Claude Code. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
@@ -57,8 +59,8 @@ That default is a footgun and is written up in §2.
 | T-0024/25 | test/impl | done | `verifier.py` gates 3–6 — lint, tests, criteria, coverage |
 | T-0026/27 | test/impl | done | runner protocol + deterministic fake runner |
 | T-0028/29 | test/impl | done | `prompt_engine.py` — 5 golden snapshots committed |
-| **T-0030/31** | test/impl | **next** | `orchestrator.py` — the continuous loop |
-| T-0032/33 | test/impl | todo | `cli.py` — full command surface (**self-hosting crossover**) |
+| T-0030/31 | test/impl | done | `orchestrator.py` — the continuous loop |
+| **T-0032/33** | test/impl | **next** | `cli.py` — full command surface (**self-hosting crossover**) |
 | T-0034/35 | test/impl | todo | `runner.py` — Claude Code headless adapter (needs an agent CLI) |
 | T-0036/37 | test/impl | todo | `planner.py` — plan generation + approval gate (needs an agent CLI) |
 | T-0038/39 | test/impl | todo | `api/app.py` — read-only control plane |
@@ -72,7 +74,7 @@ That default is a footgun and is written up in §2.
 These are not derivable from `CLAUDE.md` alone. Each records *why*, because the
 conclusion without the reasoning invites someone to "fix" it back.
 
-### §4.7 declares 20 codes; `ERROR_CODES` holds fewer
+### §4.7 declares 19 codes; `ERROR_CODES` holds fewer
 
 §4.7 is the **closed design**. `ERROR_CODES` is the **implemented subset**, and
 it grows as each raising module lands.
@@ -105,17 +107,46 @@ to match: the plan is the input, mutable task state (`state`, `attempts`,
 replay reconstructs. `rebuild` compares both — structure divergence means the
 plan was edited out of band, state divergence means an engine bug.
 
-### `E_NO_READY_TASK` is deferred, not implemented
+### `E_NO_READY_TASK` — RESOLVED at T-0031: removed from §4.7
 
-§4.1's normative loop reads `task = state.next_ready_task(repo)` / `if task is
-None:` and ends the run `complete_or_blocked`. That treats exhaustion as a
-**normal terminal condition**. §4.7 lists `E_NO_READY_TASK`, which treats it as
-an **error**. They disagree.
+Deferred since T-0013, decided now. **Exhausting the queue is a normal
+termination, not an error**, and the code has been struck from §4.7 (nineteen
+codes remain).
 
-`next_ready_task` currently returns `None`, matching §4.1. Resolving this needs
-a decision about which reading is right, and that belongs with the orchestrator
-at **T-0030** — not with the state engine, which has no opinion about how a run
-ends. Do not implement it earlier just because the code exists in §4.7.
+The decisive evidence is that §4.7's own table argued against itself: the
+"correct response" column read *"Run ends `complete_or_blocked`"*. **A code
+whose documented handling is "terminate normally" is not an error** — it is a
+control-flow signal wearing an error's clothes, and raising it would mean every
+successful run ends by catching an exception.
+
+Three other parts of the contract already agreed, so §4.7 was the lone dissenter:
+
+- §4.3 gives exhaustion two real terminations — `complete` (exit 0) when every
+  task is verified, `blocked` (exit 2) when one is escalated waiting on a human.
+- `RunEndedEvent`'s schema (frozen since T-0003) enumerates exactly those six
+  reasons. There is no representable event for "no ready task", so an error
+  path could not even be recorded. Note this also kills the literal string
+  `complete_or_blocked` from §4.1's pseudocode — it was shorthand for "pick one
+  of the two", and §4.1 has been amended to say so.
+- `state_engine.next_ready_task` has returned `None` since T-0013.
+
+The orchestrator implements exactly that: `None` from selection means end the
+run, `complete` unless some node is `escalated`.
+
+### `next_ready_task` selects `rejected` as well as `ready`
+
+Forced by a frozen test, and the constraint is worth knowing before touching
+readiness again. `test_state_read.py` pins `recompute_readiness` to **leave a
+`rejected` node alone** ("recomputation must not resurrect a task that already
+left the queue"), so nothing moves `rejected` back to `ready`.
+
+But `_CLAIMABLE_FROM` has always been `{"ready", "rejected"}`. Selecting only
+`ready` therefore stranded every failed task forever: the loop would skip it and
+report `complete` with the work unfinished.
+
+So selection now returns anything **claimable**. That is also what keeps the
+retry free of a special case — a retry is simply the next selection, which is
+the whole of AC-3.
 
 ### Python is 3.12; the spec still says 3.11 (**unresolved** — see §5)
 
@@ -328,6 +359,38 @@ risk: if `verifier` ever changes which gates a task type runs, this must change
 too. The prompt tells the agent which gates apply, so a divergence would brief
 the agent to satisfy a check that will not run, or to ignore one that will.
 
+### `.redgear/` must be excluded from both working-tree audits
+
+redgear's own state directory is committed to the target repo on purpose — it
+*is* the audit trail — so every write redgear makes during a run is a real git
+change. That breaks two checks at once, and neither failure is obvious from
+reading the contract:
+
+- **The scope gate.** The event log, the projection and the persisted prompt
+  all land between the claim and the verification, so `scope_check` reported
+  each as an `out_of_scope_write`. Every task would have failed.
+- **The §8.4 dirty-tree refusal.** The run lock is taken *before* the check and
+  lives in `.redgear/locks/`, so a run refused to start on dirt it had just
+  created itself. This is what the first orchestrator test run actually hit —
+  24 failures, all `DirtyTreeError`.
+
+`paths.is_state_path` is the single home for the rule, used by both. Deliberately
+not in `gitctx`, which is a general-purpose reader that should not know
+redgear's layout. **§7.2 and §8.4 are both silent on this** and arguably should
+not be.
+
+### The verifier is injectable into the loop
+
+`run(..., verify=...)` defaults to `verifier.run_gates`. The seam exists for the
+same reason the `Runner` protocol does — the second implementation ships on day
+one — and it is what keeps the loop's 27 tests at ~19 s instead of spawning a
+nested pytest per iteration.
+
+The loop's job is deciding what a verdict *means*; gate mechanics have 43 tests
+of their own. One test (`test_real_gates_end_to_end`) runs the real pipeline so
+a mis-wired call signature cannot hide behind a stub — without it, every other
+test in the file would pass against a broken call.
+
 ### Claude Code does not commit
 
 The human commits, every time. This is G6 (`redgear` never commits in the target
@@ -538,6 +601,30 @@ paths. Without normalisation the changed set and the coverage data never
 intersect — every denominator is empty and `coverage_delta` silently passes
 everything, which is indistinguishable from a working gate until you look.
 
+### The fake runner applies patches **cumulatively** across a sequence
+
+**Symptom:** a two-scenario retry sequence where attempt 1 fails on scope and
+attempt 2 is a clean patch — and attempt 2 fails too, on a file attempt 1 wrote.
+
+**Cause:** `FakeRunner` writes into the same working tree on every dispatch and
+nothing rolls back between turns. The diff is taken against the claim's
+`base_commit`, so by attempt 2 it contains the *union* of both patches. A real
+agent would clean up after itself; the fake has no such instinct.
+
+The bite is specific: it only shows when attempt 2 touches a **different** path
+from attempt 1. If both write the same file, attempt 2 overwrites it and the
+union is just that file.
+
+**Workaround, used by the T-0030 sequences:** have every scenario in a sequence
+write the *same* path, varying only the content — `WRITES_DIRTY` then
+`WRITES_CLEAN` both write `src/pkg/feature.py`. Where a sequence genuinely needs
+attempt 2 to touch a different file, either declare the earlier file too or
+add a `FileEdit(path, None)` deletion to clean it up.
+
+Do not "fix" this by resetting the tree between dispatches. Cumulative writes
+are what a real agent does, and a fake that silently reverted them would hide
+the class of bug where an agent leaves debris behind.
+
 ### `issubclass` against a runtime-checkable Protocol is *structural*, and returns True
 
 **Symptom:** a test asserting "the fake does not inherit from the protocol"
@@ -645,6 +732,18 @@ was added at the human's request as a named regression guard for the
 deleted-frozen-file crash described in §3. The fix alone was judged
 insufficient — the bug broke gate 2 on the single most likely way an agent
 fakes a green suite, so it warranted a test that names it.
+
+| `tests/test_errors.py` | `len(documented) == 20` → `== 19` | Direct consequence of an explicitly authorized §4.7 amendment at T-0031 (striking `E_NO_READY_TASK`). The assertion mirrors §4.7's row count as a parse sanity check; leaving it at 20 would have made the authorized amendment impossible to land. Same class of correction as the earlier exact-count fix in this file. |
+| `tests/test_orchestrator.py` | `test_event_sequence_is_gapless_and_monotonic`: `range(1, len(seqs) + 1)` → `range(len(seqs))` | The assertion required event `seq` to start at **1**. Sequences are **0-based**: `events.last_seq` returns `-1` for an empty log so the first append is `last_seq() + 1 == 0`, and `tests/test_events.py` — verified at T-0011 — pins it in three places (`list(range(25))`, `[0, 1, 2]`, `last_seq() == -1`). The new assertion contradicted a verified sibling, so it could never pass against a correct implementation. The FR-1 property it means to check (gapless, monotonic) was always satisfied; only the start index was wrong. |
+
+**These two are different in kind, and the distinction is the whole point of
+the escape hatch.** The `test_errors.py` line synchronises a
+documentation-mirror count with a contract change that was explicitly
+requested — a *consequent* edit. The `test_orchestrator.py` line corrects an
+assertion that contradicted an already-verified test in another module — a
+*defect* edit. Neither is "the test was inconvenient, so it changed": in both
+cases the assertion was demonstrably wrong against something independently
+fixed, which is the bar §6 sets before a frozen file may be touched at all.
 
 **T-0028/T-0029 required no frozen-file edits.** One Phase-1 defect was caught
 before the freeze: the `scaffold` snapshot fixture passed its acceptance

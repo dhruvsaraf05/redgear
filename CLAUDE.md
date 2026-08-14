@@ -531,7 +531,10 @@ def run(repo: Path, budget: Budget) -> RunOutcome:
             # --- A. SELECT ---
             task = state.next_ready_task(repo)
             if task is None:
-                return state.end_run(session, "complete_or_blocked")
+                # Nothing claimable. `complete` when every task is verified,
+                # `blocked` when one is escalated waiting on a human. Both are
+                # §4.3 terminations; exhaustion is not an error (see §4.7).
+                return state.end_run(session, "complete" if nothing_escalated else "blocked")
 
             lease = state.claim(task, session)          # base_commit + frozen hashes
 
@@ -695,7 +698,6 @@ is pending, not missing.
 | `E_GRAPH_INVALID` | A §4.4 invariant other than acyclicity fails | Stop; bad graph |
 | `E_SCOPE_CONTRADICTION` | Writable and frozen globs overlap (§4.4 inv. 7) | Stop; bad graph |
 | `E_TASK_STATE` | An illegal transition for the current state (§4.2) | Re-read task state |
-| `E_NO_READY_TASK` | No claimable task exists | Run ends `complete_or_blocked` |
 | `E_ATTEMPTS_EXHAUSTED` | The attempt budget is spent | Task escalates; run ends |
 
 **Locking and concurrency**
@@ -729,7 +731,17 @@ is pending, not missing.
 | `E_LOG_CORRUPT` | A gap or repeat in event `seq` (FR-1) | Stop; never auto-repair |
 | `E_PROJECTION_DIVERGED` | Rebuild differs from the on-disk projection | Stop; surface loudly (G4) |
 
-Twenty codes. If a needed failure has no code here, that is a contract gap —
+**`E_NO_READY_TASK` was removed at T-0031**, and the reason generalises. Its
+own "correct response" column read *"Run ends `complete_or_blocked`"* — a code
+whose documented handling is "terminate normally" is not an error, it is a
+control-flow signal wearing an error's clothes. §4.3 already gives exhaustion
+two real terminations (`complete` when every task is verified, `blocked` when
+one is waiting on a human), the `run_ended` event schema enumerates exactly
+those six reasons and has no entry for it, and `state_engine.next_ready_task`
+returns `None` rather than raising. Four independent parts of the contract
+agreed; only this table disagreed.
+
+Nineteen codes. If a needed failure has no code here, that is a contract gap —
 report it rather than inventing a code.
 
 ---
@@ -982,6 +994,8 @@ Runs in order, **short-circuits on first failure**. Gates after the failure are 
 
 **`scope_check`** — compute the real changed set (§7.4). Cross-check against the agent's `changed_files`: a file redgear saw but the agent did not declare is `undeclared_change`; the reverse is `phantom_change`. An agent that has lost track of its own edits cannot be trusted about anything else. Then assert every changed path matches `writable_globs ∪ creatable_globs`; new files must match `creatable_globs` specifically.
 
+**redgear's own writes are not agent work.** Everything under `.redgear/` — the event log, the projection, locks, prompts, proofs — is written by the engine during the iteration it is auditing. These paths are excluded from the changed set before any glob matching. Without the exclusion the scope gate fails every task on redgear's own bookkeeping.
+
 **`frozen_hash_check`** — re-expand `frozen_globs` against tracked *plus untracked* files so a newly added file under `tests/**` is caught. Compare to the digest map from the lease. Report `frozen_file_modified`, `frozen_file_deleted`, `frozen_file_added`. Report **every** violation, not just the first. This gate is the mechanical heart of G2.
 
 **On gate 2's relationship to gate 1.** For a validly-scoped task, any touch
@@ -1144,6 +1158,9 @@ Checked **before** each iteration begins, never mid-turn. A cap hit ends the run
 ### 8.4 Repository safety
 
 - Refuse to start on a dirty tree (`E_DIRTY_TREE`), listing the offending paths.
+
+  The dirty-tree check excludes `.redgear/`. The run lock is acquired before the check and lives under that directory, so a run would otherwise refuse to start on dirt it had just created. `paths.is_state_path` is the single home for this rule; do not reimplement it per call site.
+
 - Refuse to start outside a git repository.
 - Never commit, push, rebase, reset, or checkout in the target repo. The human owns git.
 - Print a one-line summary at the end of every run: iterations, tasks verified, tasks escalated, estimated spend, wall clock.
