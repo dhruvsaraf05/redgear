@@ -70,6 +70,21 @@ class SpecDriftError(RedgearError):
     code: ClassVar[str] = "E_SPEC_DRIFT"
 
 
+class PlanInvalidError(RedgearError):
+    """A plan produced a task the engine cannot execute as written.
+
+    Section 4.7 files this under "a generated plan fails a section 4.4
+    invariant". It also covers the section 5.6 case: a task whose prompt
+    exceeds the character cap is a task too large to brief, and the contract
+    is explicit that this "is a signal the task is too large. Surface it as a
+    planning problem, do not silently truncate the scope section" -- a prompt
+    quietly shortened to fit would drop the very frozen paths whose absence
+    causes the scope violation.
+    """
+
+    code: ClassVar[str] = "E_PLAN_INVALID"
+
+
 # --- Graph and state -------------------------------------------------------
 
 
@@ -165,6 +180,7 @@ ERROR_CODES: dict[str, type[RedgearError]] = {
     for cls in (
         PlanUnreviewedError,
         SpecDriftError,
+        PlanInvalidError,
         GraphCycleError,
         UnknownNodeRefError,
         ScopeOverlapError,

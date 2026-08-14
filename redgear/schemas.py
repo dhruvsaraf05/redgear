@@ -175,6 +175,29 @@ class Scope(Strict):
     frozen_globs: list[str]
 
 
+class AdrRule(Strict):
+    """One architecture decision, reduced to something the engine can act on.
+
+    FR-9: "Decisions that live only in prose are documentation nobody reads. A
+    rule bound to a path glob is a constraint the engine can enforce." So the
+    record carries a single imperative sentence and at least one path glob,
+    and ``prompt_engine`` injects it verbatim into any task whose writable
+    scope its globs intersect.
+
+    ``accepted_at`` exists for ordering, not for display: section 5.6 caps a
+    prompt at ten rules, most-recently-accepted first, so a project with forty
+    ADRs spends its token budget on the current decisions rather than on
+    architecture history.
+    """
+
+    id: str
+    title: str
+    rule: str
+    applies_to: list[str]
+    accepted_at: datetime
+    supersedes: str | None = None
+
+
 class Claim(Strict):
     """CLAUDE.md section 4.1 loop pseudocode: "base_commit + frozen hashes"
     and ``runner.dispatch(prompt, lease.allowed_tools, ...)``."""

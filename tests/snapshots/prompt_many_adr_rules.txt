@@ -1,0 +1,104 @@
+# redgear task T-0042
+
+## Role
+
+You are completing exactly one task inside a verified pipeline. redgear composed
+this prompt from its own records, and redgear verifies your work independently
+after your process exits: the git diff is recomputed, every frozen file is
+re-hashed, and the test suite is run. Stay inside the scope below, change
+nothing that is frozen, and do not build anything the acceptance criteria do not
+ask for. If the task cannot be completed honestly as written, say so -- that
+costs you nothing and is the correct answer.
+
+## Task
+
+- id: T-0042
+- type: implementation
+- title: Implement the ledger posting rules
+
+## Acceptance criteria
+
+Each criterion names the test that will be run to check it.
+
+- AC-1 -- Balanced postings are accepted.
+  checked by: tests/ledger/test_posting.py::test_balanced_accepted
+- AC-2 -- Unbalanced postings raise UnbalancedPosting.
+  checked by: tests/ledger/test_posting.py::test_unbalanced_rejected
+
+Inherited from T-0041. These criteria are already verified; you must not author
+or change them.
+
+## Scope
+
+Writable -- you may modify files matching:
+- src/ledger/**
+
+Creatable -- you may create new files matching:
+- src/ledger/**
+
+FROZEN -- you may not modify, create, or delete any file matching:
+- migrations/**
+- tests/**
+
+3 files matching the frozen patterns were SHA-256 hashed before this turn and
+are re-hashed after it. Any difference fails the task before lint or tests run.
+
+## Rules
+
+Architecture decisions that apply to the paths you are writing. Follow them
+exactly as written.
+
+- ADR-0012 -- No bare except
+  Catch a named exception class, never a bare except.
+  applies to: src/ledger/**
+- ADR-0011 -- Explicit timezones
+  Store every timestamp as UTC with an explicit offset.
+  applies to: src/**
+- ADR-0007 -- Integer minor units
+  Represent every monetary amount as integer minor units.
+  applies to: src/ledger/**
+
+## Verification
+
+redgear runs these commands itself after you exit and reads their exit codes.
+Nothing you report about them is taken on trust.
+
+- lint: ruff check --output-format=json --no-cache .
+- tests: pytest
+- coverage: coverage, floor 0.85 over the lines you changed
+
+Gates run in this order and stop at the first failure:
+
+1. scope_check
+2. frozen_hash_check
+3. lint
+4. tests_pass
+5. criteria_coverage
+6. coverage_delta
+
+## Prior attempts
+
+none -- this is attempt 1 of 3.
+
+## Required outcome
+
+When you are finished, return a JSON object matching the provided schema:
+
+  outcome: "completed"          — you believe the task is done
+           "blocked"            — you cannot proceed honestly
+           "scope_insufficient" — the task requires editing a path you were not granted
+
+  summary:        3 sentences maximum on what you changed and why
+  changed_files:  every file you modified or created
+  known_gaps:     anything knowingly incomplete
+
+Reporting "blocked" or "scope_insufficient" does NOT count against your attempt
+budget and is NOT a failure. It is the correct action when the task is ambiguous,
+a dependency is missing, the environment is broken, or two rules contradict.
+
+Declaring a gap in known_gaps is never penalised. Hiding one is caught by
+verification and costs you an attempt.
+
+Your work is verified independently after you exit: the git diff is recomputed,
+frozen files are hash-checked, and the test suite is run by the orchestrator.
+Claiming completion you cannot support will fail and consume an attempt.

@@ -7,27 +7,27 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0027 (runner protocol + fake runner). Milestone 5 is
-done; the test rig every later pair depends on now exists.*
+*Last updated: after T-0029 (prompt_engine). The highest-risk module is done;
+everything milestone 9 needs now exists except the loop itself.*
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0027` are done.** The six-gate verification harness is
-finished and the deterministic test rig is in place. Next up is
-**`T-0028`/`T-0029` — `prompt_engine.py`**, flagged in §12.1 as the project's
-**highest-risk pair**: silent failure mode, snapshots mandatory.
+**`T-0001` through `T-0029` are done.** Next up is **`T-0030`/`T-0031` —
+`orchestrator.py`**, the continuous loop. Every input it needs is now built:
+gates, the fake runner, and the prompt engine.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **252 passed, 1 skipped** (was 226) |
-| Suite runtime | **~125 s idle, ~165 s under load — over NFR-6's 90 s cap. See §5.** The 26 fake-runner tests add ~5 s; they spawn nothing. |
+| Test suite | **284 passed, 1 skipped** (was 252) |
+| Suite runtime | **83 s on an idle machine, ~125 s under load.** Inside NFR-6's 90 s cap when nothing competes; see §5, the earlier "over cap" figures were measured against a busy machine. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol) |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol), `prompt_engine` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
-| Not yet built | `prompt_engine`, `orchestrator`, `cli`, `runner` adapter, `planner`, `api/`, `ui/` |
+| Golden prompts | `tests/snapshots/` — 5 files. A prompt change is now a reviewable diff. |
+| Not yet built | `orchestrator`, `cli`, `runner` adapter, `planner`, `api/`, `ui/` |
 | Crossover | `T-0033` (`cli.py`). Until then every task is driven manually by a human running Claude Code. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
@@ -56,8 +56,8 @@ That default is a footgun and is written up in §2.
 | T-0022/23 | test/impl | done | `verifier.py` gates 1–2 — scope check, frozen hash |
 | T-0024/25 | test/impl | done | `verifier.py` gates 3–6 — lint, tests, criteria, coverage |
 | T-0026/27 | test/impl | done | runner protocol + deterministic fake runner |
-| **T-0028/29** | test/impl | **next** | `prompt_engine.py` — **highest risk**, snapshots mandatory |
-| T-0030/31 | test/impl | todo | `orchestrator.py` — the continuous loop |
+| T-0028/29 | test/impl | done | `prompt_engine.py` — 5 golden snapshots committed |
+| **T-0030/31** | test/impl | **next** | `orchestrator.py` — the continuous loop |
 | T-0032/33 | test/impl | todo | `cli.py` — full command surface (**self-hosting crossover**) |
 | T-0034/35 | test/impl | todo | `runner.py` — Claude Code headless adapter (needs an agent CLI) |
 | T-0036/37 | test/impl | todo | `planner.py` — plan generation + approval gate (needs an agent CLI) |
@@ -274,6 +274,59 @@ So `tests/test_fake_runner.py` compares `inspect.signature` explicitly as well.
 Signature conformance is otherwise a static property, enforced by
 `mypy --strict` at the call sites — which is why the orchestrator being *typed*
 against `Runner` (NFR-8) is the real guarantee, not the isinstance check.
+
+### §5.2's "omitted only on attempt 1" vs. "never omit a section"
+
+§5.2 says three things that cannot all be literally true at once: never omit a
+section; empty sections render as an explicit `none`; and PRIOR ATTEMPTS is
+"omitted only on attempt 1".
+
+**Reading adopted:** the *heading* is always present; the untrusted *block* is
+what is absent on attempt 1, where the section body reads
+`none -- this is attempt 1 of 3.`
+
+That is the only reading under which all three statements hold, and AC-2 —
+"empty sections render explicitly rather than vanishing" — is the testable
+criterion, so it wins over the parenthetical. It is also the safer default: an
+absent heading is ambiguous, because the agent cannot distinguish "there were
+no prior attempts" from "redgear failed to tell me about them".
+
+### Criteria come from the context, never from the task node
+
+`build()` renders `context.criteria` and never reads `task.acceptance_criteria`.
+The caller resolves them — a `test_authoring` or `scaffold` node carries its
+own, an `implementation` node inherits from a verified sibling (G2, and §4.4
+invariant 5 makes its own list *necessarily* empty).
+
+One source of truth. Reading both and preferring whichever is non-empty would
+work until the day they disagree, and then the prompt would silently show the
+wrong criteria — exactly the silent-failure class this module is dangerous for.
+A Phase-1 fixture got this wrong (§3) and the golden file caught it.
+
+### Glob applicability is compared pattern-to-pattern, not by expansion
+
+FR-9 needs "rules whose globs intersect a task writable scope". The engine has
+no filesystem, so it cannot expand either side — and expanding would make
+prompt text depend on which files happen to exist, destroying snapshot
+stability.
+
+`_globs_overlap` compares literal prefixes before the first wildcard: two
+patterns can overlap only if one prefix is a prefix of the other. `src/**` and
+`src/ledger/**` overlap; `ui/**` and `src/ledger/**` do not.
+
+Deliberately generous. A false positive shows the agent one rule it did not
+strictly need; a false negative **hides a rule it was required to follow**.
+
+### The gate-set mapping is duplicated from `verifier.py` on purpose
+
+§11.2 rule 7 names this exact import as a boundary violation ("If you are about
+to import `verifier` into `prompt_engine`, stop"). So `_GATES_BY_TASK_TYPE` is
+restated in `prompt_engine` and pinned by tests rather than shared.
+
+Four lines of duplication is the cheaper of the two costs, but it *is* a drift
+risk: if `verifier` ever changes which gates a task type runs, this must change
+too. The prompt tells the agent which gates apply, so a divergence would brief
+the agent to satisfy a check that will not run, or to ignore one that will.
 
 ### Claude Code does not commit
 
@@ -520,6 +573,43 @@ so it cannot suffer the Phase-1/Phase-2 classification flip described above.
 `no-lines-before` means it sits directly under the `redgear` import with no
 blank line.
 
+### Hand-written golden files are the point, and they are unforgiving
+
+Snapshots live under `tests/**`, which is frozen in Phase 2 — so they **cannot
+be generated from the implementation**. They must be hand-authored in Phase 1
+and the implementation made to match byte-for-byte.
+
+That is uncomfortable and it is correct: it forces the prompt format to be a
+*specification* written before the code, rather than a transcript of whatever
+the code happened to emit. A generated snapshot proves only that the function
+is deterministic.
+
+Two things made it tractable:
+
+- Write the first golden by hand, then **derive the others by scripted
+  substitution** on anchored strings (`assert old in text` before replacing).
+  Retyping five near-identical 3 KB files by hand is where the typos live.
+- Keep the format mechanically regular — fixed heading shapes, `- ` bullets,
+  one blank line between blocks.
+
+**Verify the snapshot test is live before trusting a green.** Corrupt one
+golden deliberately and confirm the test fails; a snapshot test that silently
+passes because the file is missing or the comparison is inverted is worse than
+none. Done for this pair: removing one frozen glob from a golden failed the
+test as expected.
+
+### A forged markdown heading is the second injection vector
+
+Escaping the fence markers (§5.4 rule 1) is the documented attack. The one
+next to it: untrusted content containing `## Required outcome` at line start
+would appear to *end* the quoted block and resume trusted prompt space, without
+ever touching a marker.
+
+`sanitise_untrusted` neuters any line-leading `#` run to `[##] `. Note that
+prefixing the line with a space does **not** work — `" ## Required outcome"`
+still contains `"## Required outcome"` as a substring, so a `count(...) == 1`
+assertion would still see two. The heading text has to actually be broken.
+
 ### `list` is invariant; `list[str]` does not satisfy `list[JsonValue]`
 
 **Symptom:** mypy rejects `detail={"k": sorted(x)}`; rewriting as a
@@ -556,6 +646,13 @@ deleted-frozen-file crash described in §3. The fix alone was judged
 insufficient — the bug broke gate 2 on the single most likely way an agent
 fakes a green suite, so it warranted a test that names it.
 
+**T-0028/T-0029 required no frozen-file edits.** One Phase-1 defect was caught
+before the freeze: the `scaffold` snapshot fixture passed its acceptance
+criteria to the task node but not to the `PromptContext`, so the golden file
+and the fixture disagreed about which criteria would render. Fixed in Phase 1;
+had it survived, the golden could not have been satisfied without an authorized
+edit.
+
 `pyproject.toml` and `.github/**` are frozen to task work but were edited twice
 under explicit authorization: to pin exact dev-tool versions and narrow the G5
 greps, and to add the two isort settings above.
@@ -570,27 +667,29 @@ each new test file before ending Phase 1 is what caught the first.
 
 ## 5. Open questions — need a human decision
 
-### The suite is ~125 s; NFR-6 caps it at 90 s
+### Suite runtime is marginal against NFR-6's 90 s cap — measure before deciding
 
-**This is a live breach of an acceptance criterion**, introduced by T-0024 and
-untouched since. The suite went 183 → 226 tests and ~28 s → ~120 s there; T-0026
-added 26 more tests for ~5 s, because the fake runner spawns nothing. The
-overage is almost entirely subprocess launches in the *gate* tests: 43 of them,
-each spawning at least one nested pytest, and the ten coverage tests spawning
-`coverage run -m pytest` plus `coverage json` at ~5 s apiece.
+**Earlier entries here overstated this, and the correction matters.** The
+"~120–165 s" figures recorded at T-0024 and T-0026 were all measured while
+other jobs were running on the same machine. A clean run at T-0029, with 284
+tests and nothing competing, is **82.6 s — inside the cap**.
 
-`-p no:cov` in the child argv bought roughly 10%. The rest is interpreter and
-plugin startup, and it does not compress much further.
+So there is no confirmed breach today, but there is very little headroom, and
+the cost is structural: 43 gate tests each spawn at least one nested pytest,
+and the ten coverage tests spawn `coverage run -m pytest` plus `coverage json`
+at ~5 s apiece. `-p no:cov` in the child argv bought roughly 10%; the rest is
+interpreter and plugin startup and does not compress much further.
 
-§10.5 says "If it slows, shrink the fixture repo, not the scenario list." The
-fixture is already three small files. The real lever is **sharing one
-`run_harness` result across tests that only differ in assertions** — but those
-tests are frozen now, so that is a T-0026-or-later change requiring authorized
-edits, not something to smuggle in.
+The prompt-engine tests added 32 cases for well under a second, which is what a
+pure function costs.
 
-Options: accept and amend NFR-6; restructure the gate tests under
-authorization; or mark the subprocess-heavy ones slow and exclude them from the
-default run. **Needs a call — it is a "must" priority criterion.**
+What to do: **re-measure on an idle machine before acting**, and take the CI
+number as authoritative rather than a laptop's. If it does breach there, the
+lever is sharing one `run_harness` result across tests that differ only in
+assertions — those tests are frozen, so it needs authorized edits and is not
+something to smuggle into an unrelated pair. §10.5's advice ("shrink the
+fixture repo, not the scenario list") is already exhausted: the fixture is
+three small files.
 
 ### `spec.json` says Python 3.11; everything else says 3.12
 
