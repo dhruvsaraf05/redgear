@@ -138,7 +138,7 @@ def _node(graph: TaskGraph, task_id: str) -> TaskNode:
     raise KeyError(task_id)
 
 
-def _resolve_criteria(graph: TaskGraph, task: TaskNode) -> list[AcceptanceCriterion]:
+def criteria_for(graph: TaskGraph, task: TaskNode) -> list[AcceptanceCriterion]:
     """The criteria this task is judged against.
 
     A ``test_authoring`` or ``scaffold`` node carries its own. An
@@ -263,7 +263,7 @@ def run(
                 return finish("engine_error")
 
             attempt = task.attempts + 1
-            criteria = _resolve_criteria(graph, task)
+            criteria = criteria_for(graph, task)
             tools = allowed_tools_for(task)
 
             # --- B. COMPOSE -------------------------------------------------
@@ -421,3 +421,69 @@ def _dispatch_with_one_retry(
         if turn.parse_ok:
             return turn
     return None
+
+
+def compose_dry_run(
+    repo_root: Path,
+    *,
+    harness: HarnessConfig,
+    adr_rules: Sequence[AdrRule] = (),
+    limit: int | None = None,
+) -> list[tuple[str, str]]:
+    """Compose the prompts a real run *would* send, without sending any.
+
+    Section 9: "``redgear run --dry-run`` composes and prints every prompt
+    without dispatching. This is the primary development affordance -- it
+    costs nothing and shows exactly what the agent would receive."
+
+    "Costs nothing" is the load-bearing half, and it constrains the
+    implementation: this **writes nothing at all**. No claim, no lease, no
+    event, no run directory. A dry run that mutated state would not be safe to
+    run constantly, and running it constantly is the entire point.
+
+    That means the claim has to be synthesised rather than taken. It is the
+    same computation ``claim_task`` performs -- HEAD plus a digest of every
+    frozen file -- minus the persistence, so the prompt's scope section and
+    frozen-file count are the real ones the agent would see.
+
+    Selection walks the queue the way the loop does, marking each task
+    verified in an **in-memory** copy so the next iteration sees what it would
+    really see. The graph on disk is never touched.
+    """
+    graph = state_engine.load_graph(repo_root)
+    composed: list[tuple[str, str]] = []
+    base_commit = gitctx.head_commit(repo_root)
+
+    while limit is None or len(composed) < limit:
+        graph = state_engine.recompute_readiness(graph)
+        task = state_engine.next_ready_task(graph)
+        if task is None:
+            break
+
+        frozen = state_engine.frozen_digests(repo_root, task.scope.frozen_globs)
+        claim = Claim(
+            base_commit=base_commit,
+            frozen_hashes=frozen,
+            allowed_tools=allowed_tools_for(task),
+            claimed_at=datetime.now(tz=UTC),
+        )
+        context = PromptContext(
+            repo_root=str(repo_root),
+            attempt=task.attempts + 1,
+            max_attempts=task.max_attempts,
+            harness=harness,
+            criteria=criteria_for(graph, task),
+            adr_rules=list(adr_rules),
+            prior_attempts=list(task.prior_attempts),
+        )
+        composed.append((task.id, prompt_engine.build(task, claim, context)))
+
+        # Advance the in-memory copy only, so the walk terminates and shows
+        # the queue in the order a real run would drain it.
+        nodes = [
+            node.model_copy(update={"state": "verified"}) if node.id == task.id else node
+            for node in graph.nodes
+        ]
+        graph = graph.model_copy(update={"nodes": nodes})
+
+    return composed

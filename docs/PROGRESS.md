@@ -7,30 +7,34 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0031 (orchestrator). The loop runs end to end and the
-suite is green.*
+*Last updated: after T-0033 (cli). The command surface is complete. **The
+self-hosting crossover is NOT achieved — see §5.***
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0031` are done.** redgear now selects, composes,
-dispatches, verifies and decides without a human in the relay — the loop from
-§4.1 runs end to end against the fake runner and against the real six-gate
-pipeline. Next up is **`T-0032`/`T-0033` — `cli.py`**, the self-hosting
-crossover.
+**`T-0001` through `T-0033` are done.** The §9 command surface is complete
+for the eight commands in scope, and `redgear run --dry-run` works against the
+real repository today. Next up is **`T-0034`/`T-0035` — the Claude Code
+adapter**, which is the first pair needing an agent CLI.
+
+⚠️ **§4.6 says T-0033 is the point where redgear can drive its own tasks. That
+is not true yet**, for three concrete reasons rather than one. See §5 — the
+most important is that the manual phase never wrote events, so redgear
+currently believes none of the 33 finished tasks were done.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **311 passed, 1 skipped** (was 284) |
-| Suite runtime | **83 s on an idle machine, ~125 s under load.** Inside NFR-6's 90 s cap when nothing competes; see §5, the earlier "over cap" figures were measured against a busy machine. |
+| Test suite | **331 passed, 1 skipped** (was 311) |
+| Suite runtime | **Unreliable on this machine — measured 83 s to 240 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol), `prompt_engine`, `orchestrator` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol), `prompt_engine`, `orchestrator`, `cli` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
 | Golden prompts | `tests/snapshots/` — 5 files. A prompt change is now a reviewable diff. |
-| Not yet built | `cli`, `runner` adapter, `planner`, `api/`, `ui/` |
-| Crossover | `T-0033` (`cli.py`). Until then every task is driven manually by a human running Claude Code. |
+| Not yet built | `runner` adapter (T-0034), `planner` + `plan`/`approve` commands (T-0036), `api/`, `ui/` |
+| Crossover | **Not reached.** §4.6 places it at T-0033; in practice it needs T-0034 (adapter) and an approved plan. §5. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
 commands come from configuration only) and the resolved inherited criteria.
@@ -60,8 +64,8 @@ That default is a footgun and is written up in §2.
 | T-0026/27 | test/impl | done | runner protocol + deterministic fake runner |
 | T-0028/29 | test/impl | done | `prompt_engine.py` — 5 golden snapshots committed |
 | T-0030/31 | test/impl | done | `orchestrator.py` — the continuous loop |
-| **T-0032/33** | test/impl | **next** | `cli.py` — full command surface (**self-hosting crossover**) |
-| T-0034/35 | test/impl | todo | `runner.py` — Claude Code headless adapter (needs an agent CLI) |
+| T-0032/33 | test/impl | done | `cli.py` — init, run, status, stop, verify, rebuild, log, doctor |
+| **T-0034/35** | test/impl | **next** | `runner.py` — Claude Code headless adapter (needs an agent CLI) |
 | T-0036/37 | test/impl | todo | `planner.py` — plan generation + approval gate (needs an agent CLI) |
 | T-0038/39 | test/impl | todo | `api/app.py` — read-only control plane |
 | T-0040 | scaf | todo | control plane UI |
@@ -766,29 +770,90 @@ each new test file before ending Phase 1 is what caught the first.
 
 ## 5. Open questions — need a human decision
 
-### Suite runtime is marginal against NFR-6's 90 s cap — measure before deciding
+### ⚠️ The self-hosting crossover is not reached at T-0033, and the reason is a missed instruction
 
-**Earlier entries here overstated this, and the correction matters.** The
-"~120–165 s" figures recorded at T-0024 and T-0026 were all measured while
-other jobs were running on the same machine. A clean run at T-0029, with 284
-tests and nothing competing, is **82.6 s — inside the cap**.
+§4.6 says "From `T-0033` onward redgear can drive its own remaining tasks."
+**It cannot.** Three things block it, verified rather than assumed:
 
-So there is no confirmed breach today, but there is very little headroom, and
-the cost is structural: 43 gate tests each spawn at least one nested pytest,
-and the ten coverage tests spawn `coverage run -m pytest` plus `coverage json`
-at ~5 s apiece. `-p no:cov` in the child argv bought roughly 10%; the rest is
-interpreter and plugin startup and does not compress much further.
+**1. There is no event log.** `.redgear/` contains only `spec/` and
+`task_graph.json`. Every node in that projection still sits in its *initial*
+state — `T-0001` is `ready`, everything else `blocked`. So redgear pointed at
+its own repository today would select **T-0001 and try to bootstrap a
+repository that has been bootstrapped for 33 tasks**.
 
-The prompt-engine tests added 32 cases for well under a second, which is what a
-pure function costs.
+This is the one that matters, and §4.6 warned about it in advance:
 
-What to do: **re-measure on an idle machine before acting**, and take the CI
-number as authoritative rather than a laptop's. If it does breach there, the
-lever is sharing one `run_harness` result across tests that differ only in
-assertions — those tests are frozen, so it needs authorized edits and is not
-something to smuggle into an unrelated pair. §10.5's advice ("shrink the
-fixture repo, not the scenario list") is already exhausted: the fixture is
-three small files.
+> "Do not treat the manual phase as throwaway. Every task before T-0033 still
+> writes real events to `.redgear/events.jsonl` and still produces real
+> proofs. When the loop takes over it must find a coherent state directory,
+> not a fresh one."
+
+That instruction was not followed. All progress is recorded in this file
+instead. The consequence is now concrete rather than theoretical, and there is
+no cheap fix: back-filling 33 tasks' worth of `task_claimed` /
+`prompt_dispatched` / `turn_completed` / `task_verified` events would be
+*fabricating an audit trail*, which is precisely the thing the audit trail
+exists to make impossible. **This needs a human decision**, and the options are
+all unattractive:
+
+- **Fabricate the history.** Cheap, and it destroys the meaning of the log.
+- **Seed a `plan_approved` event and mark T-0001…T-0033 verified by hand**, in
+  one honest "imported from manual phase" record. Still a fiction, but a single
+  clearly-labelled one rather than 300 forged events.
+- **Start the log from here** and accept that the projection disagrees with
+  reality for the already-done tasks — meaning `rebuild` reports divergence
+  forever, or those nodes must be trimmed from the graph.
+- **Let redgear re-execute from T-0001.** Honest and absurd.
+
+**2. There is no concrete `Runner`.** `redgear/runner.py` exports the protocol
+and `allowed_tools_for`, nothing else — verified by inspecting its exports. The
+Claude Code adapter is T-0034. `redgear run` therefore refuses with a clear
+message pointing at `--dry-run`, rather than pretending to dispatch.
+
+**3. The plan is `draft`, and nothing in scope can approve it.** `redgear run`
+correctly refuses with `E_PLAN_UNREVIEWED` (§3.3). The `approve` command
+belongs to T-0036/T-0037 with the planner, so today the only way to move the
+graph to `active` is hand-editing the file — which skips the `plan_approved`
+event that records *who* approved *which* `spec_hash`. That is a real gap in
+the audit trail, not a formality.
+
+**What IS true at T-0033:** the full command surface exists and works,
+`redgear run --dry-run` composes real prompts against the real graph today,
+and every refusal on the path to a real run fires correctly and in the right
+order. The engine is complete; what is missing is an agent to drive and a
+history to stand on.
+
+### Suite runtime, and why the number here keeps moving
+
+**Whole-suite timings on this machine are not trustworthy.** The same tree has
+measured 83 s, 93 s, 127 s, 166 s and 240 s across this project's sessions,
+varying with whatever else was running. Earlier entries in this file quoted
+whichever number was measured last and read as though the suite had regressed
+or improved; it had not.
+
+Only the standalone, back-to-back figures are worth anything:
+
+| File | Standalone |
+| --- | --- |
+| `test_cli.py` (20 tests) | **27 s** |
+| the four `test_gates_*.py` files (43 tests) | ~90 s |
+| everything else | small |
+
+The CLI cost is twenty `git init` fixture builds at ~0.85 s each on Windows,
+plus one test that runs the real six-gate pipeline
+(`test_verify_reports_a_verdict_for_a_task`, ~4 s) because that is literally
+what `redgear verify` does.
+
+`doctor`'s tool probe was changed from spawning `--version` to asking
+`importlib.util.find_spec`, which removed three subprocess launches and is
+also more accurate — launching `--version` conflates "module missing" with
+"module present but its version flag exits non-zero".
+
+The dominant remaining cost is fixture `git init`, and those fixtures are
+frozen. Same recommendation as before: **take the CI number as authoritative**
+rather than a Windows laptop's, and if it breaches there, the lever is a
+session-scoped repository fixture — which needs authorized edits to frozen
+files and should not be smuggled into an unrelated pair.
 
 ### `spec.json` says Python 3.11; everything else says 3.12
 

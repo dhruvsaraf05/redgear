@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import Literal
 
 from redgear.errors import (
+    AlreadyInitializedError,
     GraphCycleError,
     JsonValue,
     ScopeOverlapError,
@@ -411,6 +412,16 @@ def _frozen_digest_map(repo_root: Path, frozen_globs: Sequence[str]) -> dict[str
         if any(match_glob(path, pattern) for pattern in frozen_globs)
     ]
     return digest_map(repo_root, sorted(matched))
+
+
+def frozen_digests(repo_root: Path, frozen_globs: Sequence[str]) -> dict[str, str]:
+    """The claim-time digest map, exposed read-only.
+
+    ``compose_dry_run`` needs the real frozen-file count for the prompt's
+    scope section but must not claim anything, so the computation is shared
+    while the persistence is not.
+    """
+    return _frozen_digest_map(repo_root, frozen_globs)
 
 
 def persist_graph(repo_root: Path, graph: TaskGraph) -> None:
@@ -813,3 +824,62 @@ def record_turn(
             "parse_ok": result.parse_ok,
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Scaffolding and rebuild support (T-0033)
+# ---------------------------------------------------------------------------
+
+
+def scaffold(repo_root: Path) -> Path:
+    """Create an empty ``.redgear/`` (section 2.3). Used by ``redgear init``.
+
+    Refuses over existing state rather than merging into it: re-initialising
+    a live directory would overwrite the event log, which is the one artifact
+    redgear exists to protect.
+
+    No ``.gitignore`` entry is written. The whole directory is committed to
+    the target repo on purpose -- it *is* the audit trail (section 2.3).
+    """
+    root = redgear_dir(repo_root)
+    if root.exists():
+        raise AlreadyInitializedError(
+            f"{root} already exists; refusing to overwrite existing state",
+            detail={"path": str(root)},
+        )
+    for child in ("spec", "spec/history", "adrs", "runs", "locks"):
+        (root / child).mkdir(parents=True, exist_ok=True)
+    events_path(repo_root).touch()
+    return root
+
+
+def plan_definition(graph: TaskGraph) -> TaskGraph:
+    """Strip every mutable field back to its pristine value.
+
+    The inverse of what the log records. G4 splits a graph into an immutable
+    *plan* (ids, types, scopes, criteria, edges) and *mutable state* (`state`,
+    `attempts`, `claim`, `prior_attempts`, `verified_at`, `proof_id`,
+    `escalation`) -- and only the second half is reconstructible from events.
+    So `rebuild` resets the second half and replays the log onto it.
+
+    That is what makes divergence detectable at all: a node claiming a
+    non-initial state that no event supports is exactly the corruption the
+    check exists to find. States are recomputed rather than blanked, because
+    `ready` versus `blocked` is a function of the dependency graph, not of
+    anything that happened.
+    """
+    pristine = [
+        node.model_copy(
+            update={
+                "state": _BLOCKED,
+                "attempts": 0,
+                "claim": None,
+                "prior_attempts": [],
+                "verified_at": None,
+                "proof_id": None,
+                "escalation": None,
+            }
+        )
+        for node in graph.nodes
+    ]
+    return recompute_readiness(graph.model_copy(update={"nodes": pristine}))
