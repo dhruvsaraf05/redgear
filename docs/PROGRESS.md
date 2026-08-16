@@ -7,33 +7,34 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0033 (cli). The command surface is complete. **The
-self-hosting crossover is NOT achieved — see §5.***
+*Last updated: after T-0035 (Claude Code adapter). Milestone 10's code is
+written but **unverified against a real CLI** — see §5.*
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0033` are done.** The §9 command surface is complete
-for the eight commands in scope, and `redgear run --dry-run` works against the
-real repository today. Next up is **`T-0034`/`T-0035` — the Claude Code
-adapter**, which is the first pair needing an agent CLI.
+**`T-0001` through `T-0035` are done.** `redgear run` is now wired end to
+end: it composes a prompt, dispatches it to Claude Code, verifies the result
+and decides what happens next. Next up is **`T-0036`/`T-0037` — `planner.py`**
+and the `plan`/`approve` commands.
 
-⚠️ **§4.6 says T-0033 is the point where redgear can drive its own tasks. That
-is not true yet**, for three concrete reasons rather than one. See §5 — the
-most important is that the manual phase never wrote events, so redgear
-currently believes none of the 33 finished tasks were done.
+⚠️ **Two things are true at once and both matter.** The adapter is written and
+fully tested against recorded payloads, but those payloads are **synthetic**
+and it has **never been run against a real CLI** — no `claude` was on PATH.
+And the self-hosting blockers from T-0033 are unchanged: no approved plan, and
+no event log behind the 35 finished tasks. See §5.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **331 passed, 1 skipped** (was 311) |
+| Test suite | **355 passed, 1 skipped** (was 331) |
 | Suite runtime | **Unreliable on this machine — measured 83 s to 240 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol), `prompt_engine`, `orchestrator`, `cli` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter**), `prompt_engine`, `orchestrator`, `cli` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
 | Golden prompts | `tests/snapshots/` — 5 files. A prompt change is now a reviewable diff. |
-| Not yet built | `runner` adapter (T-0034), `planner` + `plan`/`approve` commands (T-0036), `api/`, `ui/` |
+| Not yet built | `planner` + `plan`/`approve` commands (T-0036), `api/`, `ui/` |
 | Crossover | **Not reached.** §4.6 places it at T-0033; in practice it needs T-0034 (adapter) and an approved plan. §5. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
@@ -65,8 +66,8 @@ That default is a footgun and is written up in §2.
 | T-0028/29 | test/impl | done | `prompt_engine.py` — 5 golden snapshots committed |
 | T-0030/31 | test/impl | done | `orchestrator.py` — the continuous loop |
 | T-0032/33 | test/impl | done | `cli.py` — init, run, status, stop, verify, rebuild, log, doctor |
-| **T-0034/35** | test/impl | **next** | `runner.py` — Claude Code headless adapter (needs an agent CLI) |
-| T-0036/37 | test/impl | todo | `planner.py` — plan generation + approval gate (needs an agent CLI) |
+| T-0034/35 | test/impl | done* | Claude Code adapter. *never run against a real CLI, §5 |
+| **T-0036/37** | test/impl | **next** | `planner.py` — plan generation + approval gate (needs an agent CLI) |
 | T-0038/39 | test/impl | todo | `api/app.py` — read-only control plane |
 | T-0040 | scaf | todo | control plane UI |
 | T-0041 | scaf | todo | packaging and release |
@@ -394,6 +395,45 @@ The loop's job is deciding what a verdict *means*; gate mechanics have 43 tests
 of their own. One test (`test_real_gates_end_to_end`) runs the real pipeline so
 a mis-wired call signature cannot hide behind a stub — without it, every other
 test in the file would pass against a broken call.
+
+### Two subprocess paths, two opposite environment rules
+
+Easy to "fix" one into the other, so the reason for each is recorded here.
+
+| Path | Environment | Why |
+| --- | --- | --- |
+| **Agent CLI** (`runner.py`) | **Full `os.environ`, propagated untouched** | The child cannot authenticate without it. G5's rule is that redgear never *reads* a credential — propagation is not reading. |
+| **Harness** (`verifier.py`) | **Scrubbed allowlist** (§7.3) | A test in a target repository is arbitrary code on the user's machine. It must not be able to read `os.environ` for a credential. |
+
+Same syscall, opposite policies, because the threats are opposite: one is
+about letting a trusted child authenticate, the other about denying an
+untrusted child the means to steal. `argv.json` records environment **key
+names only** — the values are never read, not redacted after the fact.
+
+### `AgentTurnReport` is a separate model from `TurnResult`, and that is a G1 property
+
+The JSON schema handed to the agent via `--json-schema` is generated from
+`AgentTurnReport`, which carries only the six fields the *agent* supplies.
+The runner-populated fields — `exit_code`, `session_id`, `num_turns`,
+`cost_usd_estimate`, `parse_ok` — are absent by construction.
+
+Generating the schema from `TurnResult` instead would invite the agent to
+report **its own exit code and whether its own output parsed**, which is
+precisely the class of self-reported fact G1 exists to refuse. A test asserts
+those keys are missing from the schema.
+
+### A timeout returns a `TurnResult`; it does not raise
+
+§6.5 says a timeout is recorded and counted, never an escaping exception —
+one slow turn must not abort the run and lose the proof. So the adapter kills
+the process tree and returns `parse_ok=False`.
+
+**Note the interaction with the orchestrator**, which is not obvious: its
+`_dispatch_with_one_retry` retries on `not parse_ok`, so a timeout is retried
+once and a second timeout ends the run as `runner_error`. That is defensible
+— a CLI that always times out is an integration problem, and the task's
+attempt budget is never charged for it — but it is emergent from two modules
+rather than stated anywhere, which is why it is written down here.
 
 ### Claude Code does not commit
 
@@ -769,6 +809,32 @@ each new test file before ending Phase 1 is what caught the first.
 ---
 
 ## 5. Open questions — need a human decision
+
+### ⚠️ The Claude Code adapter has never touched a real CLI
+
+Milestone 10's code is written, typed, and covered by 24 tests. **None of that
+is evidence that it works**, and the distinction is worth being blunt about:
+
+- No `claude` was on PATH when T-0035 was written — checked with `which`, not
+  assumed.
+- Every payload in `tests/fixtures/claude_payloads/` is **synthetic**,
+  constructed from §6.2's documented shape. Their README says so.
+- So the tests prove the adapter is correct **against the contract**. They say
+  nothing about any installed release.
+
+§12 anticipated exactly this: *"Milestone 10 is an adapter, and adapter bugs
+are integration bugs — they should be the only thing left to debug."* They
+still are. The procedure is `docs/agents/claude-code.md`, and its §0 tells the
+first runner to expect at least one flag to differ.
+
+The `# Verified against:` comment at the top of the adapter section says
+`NOT VERIFIED AGAINST A REAL CLI` rather than naming a version. §2.4 wants a
+version there; writing one nobody checked would be worse than the admission,
+because the next person would trust it.
+
+**What a human needs to do:** run `docs/agents/claude-code.md` once, replace
+the synthetic fixtures with a captured payload, and update the comment. If the
+suite then fails, the adapter was wrong and the procedure worked.
 
 ### ⚠️ The self-hosting crossover is not reached at T-0033, and the reason is a missed instruction
 

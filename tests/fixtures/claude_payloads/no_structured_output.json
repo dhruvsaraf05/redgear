@@ -1,0 +1,10 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "result": "I have finished the task. Everything looks good!",
+  "session_id": "sess_01JSYNTHETIC0000000003",
+  "num_turns": 4,
+  "duration_ms": 20553,
+  "total_cost_usd": 0.0175
+}

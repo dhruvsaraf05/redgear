@@ -106,6 +106,35 @@ class Budget(Frozen):
 # ---------------------------------------------------------------------------
 
 
+class AgentTurnReport(Frozen):
+    """The half of a turn the **agent** supplies -- section 5.3's contract.
+
+    Deliberately separate from ``TurnResult``. The runner-populated fields
+    (``exit_code``, ``session_id``, ``num_turns``, ``cost_usd_estimate``,
+    ``parse_ok``) are absent here, and their absence is a G1 property: the
+    JSON schema handed to the agent is generated from *this* model, so the
+    agent is never invited to report its own exit code or whether its own
+    output parsed. Those are facts about the process, and only the runner has
+    them.
+    """
+
+    outcome: TurnOutcome
+    summary: str = Field(max_length=1500)
+    changed_files: list[str]
+    known_gaps: list[str] = Field(default_factory=list)
+    blocker_category: BlockerCategory | None = None
+    blocker_detail: str | None = Field(default=None, max_length=4000)
+
+
+def agent_report_schema() -> dict[str, object]:
+    """The JSON Schema passed to the agent CLI via ``--json-schema``.
+
+    Section 6.2: this is what makes the outcome contract mechanical rather
+    than a hope that the agent formats its reply correctly.
+    """
+    return AgentTurnReport.model_json_schema()
+
+
 class TurnResult(Frozen):
     outcome: TurnOutcome
     summary: str = Field(max_length=1500)

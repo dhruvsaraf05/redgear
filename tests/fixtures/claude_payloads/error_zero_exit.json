@@ -1,0 +1,10 @@
+{
+  "type": "result",
+  "subtype": "error_max_turns",
+  "is_error": true,
+  "result": "Reached the maximum number of turns before finishing.",
+  "session_id": "sess_01JSYNTHETIC0000000002",
+  "num_turns": 25,
+  "duration_ms": 180422,
+  "total_cost_usd": 0.2210
+}

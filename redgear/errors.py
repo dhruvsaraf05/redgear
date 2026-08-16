@@ -147,6 +147,28 @@ class AlreadyInitializedError(RedgearError):
     code: ClassVar[str] = "E_ALREADY_INITIALIZED"
 
 
+class RunnerError(RedgearError):
+    """The agent CLI integration is broken (section 6.4 rule 4).
+
+    Reserved for the *adapter* failing, never for a task failing. A turn that
+    went badly is still a ``TurnResult`` -- the orchestrator decides what a
+    failure means and needs the record either way. This is raised when there
+    is no usable result at all: the CLI could not launch, or its output could
+    not be parsed twice running.
+
+    That distinction is load-bearing. Charging a task's attempt budget for the
+    integration's problem is how a perfectly good agent gets escalated.
+    """
+
+    code: ClassVar[str] = "E_RUNNER_ERROR"
+
+
+class RunnerTimeoutError(RedgearError):
+    """A dispatch exceeded its wall clock (section 6.5)."""
+
+    code: ClassVar[str] = "E_RUNNER_TIMEOUT"
+
+
 class UnsafeHarnessCommandError(RedgearError):
     """A configured harness command is rejected or fails to launch.
 
@@ -189,6 +211,8 @@ ERROR_CODES: dict[str, type[RedgearError]] = {
         DirtyTreeError,
         NotAGitRepoError,
         AlreadyInitializedError,
+        RunnerError,
+        RunnerTimeoutError,
         UnsafeHarnessCommandError,
         EventLogCorruptError,
         ProjectionMismatchError,

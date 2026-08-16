@@ -44,6 +44,7 @@ from redgear.errors import JsonValue, PlanUnreviewedError, RedgearError
 from redgear.events import replay as replay_events
 from redgear.paths import events_path, redgear_dir, stop_path, task_graph_path
 from redgear.redact import collect_secrets, redact_value
+from redgear.runner import ClaudeCodeConfig, ClaudeCodeRunner
 from redgear.schemas import Budget, Claim, HarnessConfig, TaskGraph, Verdict
 
 app = typer.Typer(
@@ -194,17 +195,29 @@ def run(
     except RedgearError as error:
         raise _fail(error) from error
 
-    # The loop needs a Runner, and the Claude Code adapter arrives at T-0034.
-    # Refusing here is honest; a stub that pretended to dispatch would produce
-    # verified-looking proofs of work nobody did.
-    raise _fail(
-        RedgearError(
-            "no agent CLI adapter is configured; the Claude Code runner arrives at T-0034. "
-            "Use `redgear run --dry-run` to inspect the prompts in the meantime.",
-            detail={"budget_max_iterations": budget.max_iterations},
-        ),
-        code=orchestrator.TERMINATION_EXIT_CODES["runner_error"],
+    # The adapter writes its per-turn artifacts under the run directory the
+    # state engine owns (§2.3's `agent_stdout.log`, `argv.json`).
+    agent = ClaudeCodeRunner(
+        config=ClaudeCodeConfig(),
+        artifacts_root=redgear_dir(root) / "runs" / "agent",
     )
+    console.print(f"  agent CLI: [dim]{agent.version()}[/dim]")
+    console.print()
+
+    try:
+        outcome = orchestrator.run(root, runner=agent, budget=budget, harness=_default_harness())
+    except RedgearError as error:
+        # A missing `claude` surfaces here, named, rather than as a traceback.
+        raise _fail(
+            error, code=orchestrator.TERMINATION_EXIT_CODES.get(error.code.lower(), 1)
+        ) from error
+
+    console.print()
+    console.print(
+        f"[bold]{outcome.reason}[/bold] — {outcome.iterations} iteration(s), "
+        f"{outcome.tasks_verified} verified, {outcome.tasks_escalated} escalated"
+    )
+    raise typer.Exit(outcome.exit_code)
 
 
 def _dry_run(root: Path, *, only: str | None) -> None:

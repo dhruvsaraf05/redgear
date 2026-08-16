@@ -1,0 +1,18 @@
+{
+  "type": "result",
+  "subtype": "success",
+  "is_error": false,
+  "result": "Stopping: the acceptance criteria contradict ADR-0007.",
+  "session_id": "sess_01JSYNTHETIC0000000001",
+  "num_turns": 3,
+  "duration_ms": 11890,
+  "total_cost_usd": 0.0091,
+  "structured_output": {
+    "outcome": "blocked",
+    "summary": "ADR-0007 requires integer minor units; AC-2 asks for a float. Both cannot hold.",
+    "changed_files": [],
+    "known_gaps": [],
+    "blocker_category": "contradictory_rules",
+    "blocker_detail": "ADR-0007 applies to src/ledger/**; AC-2 specifies a float amount."
+  }
+}
