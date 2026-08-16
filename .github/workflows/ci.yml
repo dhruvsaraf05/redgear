@@ -57,7 +57,14 @@ jobs:
     name: G5 secret & egress hygiene
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 is required, not tidiness. gitleaks scans history, and
+      # actions/checkout defaults to a depth-1 shallow clone -- which leaves
+      # the action unable to resolve the commit range and failing with a
+      # config-shaped error rather than a leak report. Every other job here is
+      # happy with a shallow clone; this one is not.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: gitleaks
         uses: gitleaks/gitleaks-action@v2
         env:

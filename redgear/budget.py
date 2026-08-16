@@ -173,6 +173,14 @@ def terminate_process_tree(process: subprocess.Popen[bytes] | subprocess.Popen[s
     out to ``taskkill /T``, which walks the tree by parent id. POSIX uses
     ``killpg`` on the group the child was started in. Both are best-effort --
     a grandchild that has already reparented cannot be found by either.
+
+    **Callers must spawn with ``start_new_session=True``.** This is a real
+    precondition, not a suggestion, and it is invisible on Windows. ``killpg``
+    signals a process *group*: a child spawned without a new session inherits
+    redgear's own group, so killing it on timeout signals redgear too. That
+    failed exactly one way -- a timeout test under CI sent SIGTERM to the
+    pytest process running it, and the job died with no useful output while
+    the Windows ``taskkill`` path stayed green.
     """
     if process.poll() is not None:
         return

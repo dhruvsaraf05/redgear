@@ -489,6 +489,11 @@ class ClaudeCodeRunner:
                 # The child cannot authenticate without it, and redgear never
                 # looks inside. This is NOT the scrubbed harness env of 7.3.
                 env=dict(os.environ),
+                # MANDATORY on POSIX. `terminate_process_tree` kills a process
+                # *group*, so the agent must be in its own -- otherwise a
+                # timeout signals redgear's group too and takes the run down
+                # with the turn it was trying to abort.
+                start_new_session=True,
             )
         except FileNotFoundError as exc:
             raise RunnerError(

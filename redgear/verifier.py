@@ -267,6 +267,12 @@ def run_command(cmd: Sequence[str], *, cwd: Path, timeout_s: int) -> CommandResu
         encoding="utf-8",
         errors="replace",
         env=harness_env(),
+        # MANDATORY on POSIX, and not an optimisation. `terminate_process_tree`
+        # kills a process *group*; without a new session the child inherits
+        # redgear's own group, and killing it on timeout signals the whole
+        # group -- including the process that started the run. In CI that
+        # meant a timeout test killed pytest itself.
+        start_new_session=True,
     )
     try:
         stdout, stderr = process.communicate(timeout=timeout_s)

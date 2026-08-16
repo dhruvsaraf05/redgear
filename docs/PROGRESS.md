@@ -530,8 +530,43 @@ reparented is unreachable by either.
 **`SIGTERM` is not delivered on Windows the way it is on POSIX** — Python
 maps it, but `os.kill` with it terminates immediately rather than running a
 handler. The tree-kill path is therefore what is actually tested here; the
-POSIX `killpg` branch is exercised only in CI. Treat that branch as
-**unverified locally**.
+POSIX `killpg` branch is exercised only in CI.
+
+### `killpg` without `start_new_session` signals the runner itself — CI-only, and it happened
+
+This is what the "unverified locally" warning above was hiding, and it is
+worth reading before adding any new `Popen` call.
+
+**Symptom:** every job green on Windows; the **pytest job fails in CI** with
+no useful summary. Coverage fine, lint fine, the same command passing locally.
+
+**Cause:** `terminate_process_tree` kills a process *group*
+(`os.killpg(os.getpgid(child.pid), SIGTERM)`), but neither `Popen` call in the
+package created one. On POSIX a child inherits its parent's process group, so
+`getpgid(child)` returned **pytest's own group** — and killing it on timeout
+sent `SIGTERM` to the test runner. Two tests reach that path deliberately
+(`test_gates_tests.py::test_timeout_is_gate_failure` and
+`::test_run_command_returns_a_result_on_timeout`).
+
+Invisible on Windows because that branch uses `taskkill /F /T /PID`, which
+walks the tree by parent id and touches nothing else.
+
+**Fix:** `start_new_session=True` on both `Popen` calls (`verifier.run_command`
+and `ClaudeCodeRunner._spawn`). Accepted and inert on Windows, `setsid()` on
+POSIX. `terminate_process_tree`'s docstring now states the precondition,
+because the coupling is otherwise invisible from either side.
+
+**The general lesson:** a platform branch nobody can run locally is not
+"probably fine". This one was wrong from T-0019 and stayed wrong through six
+pairs, because the only signal was a CI job that fails without saying why.
+
+### gitleaks needs `fetch-depth: 0`
+
+`actions/checkout` defaults to a depth-1 shallow clone. `gitleaks-action@v2`
+scans history, and on a shallow clone it cannot resolve the commit range — it
+fails with a config-shaped error rather than a leak report, which reads like a
+secret was found when none was. Only the secrets job needs the full clone;
+every other job is happy shallow.
 
 ### `git ls-files --cached` lists deleted files; hashing them raises
 
