@@ -7,17 +7,18 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0035 (Claude Code adapter). Milestone 10's code is
-written but **unverified against a real CLI** — see §5.*
+*Last updated: after T-0037 (planner + approval gate). Every module in §2.2
+exists except the control plane. **The adapter is still unverified against a
+real CLI** — see §5.*
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0035` are done.** `redgear run` is now wired end to
-end: it composes a prompt, dispatches it to Claude Code, verifies the result
-and decides what happens next. Next up is **`T-0036`/`T-0037` — `planner.py`**
-and the `plan`/`approve` commands.
+**`T-0001` through `T-0037` are done.** The full arc exists: `redgear plan`
+generates a plan read-only, `redgear approve` gates it behind a named human,
+and `redgear run` drives it. Next up is **`T-0038`/`T-0039` — `api/app.py`**,
+the read-only control plane.
 
 ⚠️ **Two things are true at once and both matter.** The adapter is written and
 fully tested against recorded payloads, but those payloads are **synthetic**
@@ -28,13 +29,13 @@ no event log behind the 35 finished tasks. See §5.
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **355 passed, 1 skipped** (was 331) |
+| Test suite | **380 passed, 1 skipped** (was 355) |
 | Suite runtime | **Unreliable on this machine — measured 83 s to 240 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter**), `prompt_engine`, `orchestrator`, `cli` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter**), `prompt_engine`, `orchestrator`, `cli`, `planner` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
 | Golden prompts | `tests/snapshots/` — 5 files. A prompt change is now a reviewable diff. |
-| Not yet built | `planner` + `plan`/`approve` commands (T-0036), `api/`, `ui/` |
+| Not yet built | `api/` (T-0038), `ui/` (T-0040), packaging (T-0041) |
 | Crossover | **Not reached.** §4.6 places it at T-0033; in practice it needs T-0034 (adapter) and an approved plan. §5. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
@@ -67,8 +68,8 @@ That default is a footgun and is written up in §2.
 | T-0030/31 | test/impl | done | `orchestrator.py` — the continuous loop |
 | T-0032/33 | test/impl | done | `cli.py` — init, run, status, stop, verify, rebuild, log, doctor |
 | T-0034/35 | test/impl | done* | Claude Code adapter. *never run against a real CLI, §5 |
-| **T-0036/37** | test/impl | **next** | `planner.py` — plan generation + approval gate (needs an agent CLI) |
-| T-0038/39 | test/impl | todo | `api/app.py` — read-only control plane |
+| T-0036/37 | test/impl | done | `planner.py` — plan generation + approval gate |
+| **T-0038/39** | test/impl | **next** | `api/app.py` — read-only control plane |
 | T-0040 | scaf | todo | control plane UI |
 | T-0041 | scaf | todo | packaging and release |
 
@@ -434,6 +435,36 @@ once and a second timeout ends the run as `runner_error`. That is defensible
 — a CLI that always times out is an integration problem, and the task's
 attempt budget is never charged for it — but it is emergent from two modules
 rather than stated anywhere, which is why it is written down here.
+
+### The planner needs a second dispatch shape: `PlanRunner`
+
+§3.2 says the planner goes "through `runner.py`" like the loop does, and it
+does — but it **cannot reuse `Runner.dispatch`**. That returns a `TurnResult`,
+whose only free-text field is `summary`, capped at 1500 characters. A 41-node
+plan does not fit, and widening `TurnResult` to carry one would pollute the
+loop's type for the planner's benefit.
+
+So `runner.py` grew a second protocol, `PlanRunner.dispatch_json`, and
+`ClaudeCodeRunner` implements both. The two dispatches differ genuinely: a task
+turn reports an outcome and edits files; a planning turn returns a document and
+edits nothing. Same justification §6.1 gives for `Runner` — the second
+implementation (the test fake) exists on day one.
+
+`Runner.dispatch`'s signature could not be widened anyway: a frozen test
+compares it against `FakeRunner`'s parameters, and `tests/fake_runner/` is
+frozen too.
+
+### The agent supplies a plan, never the plan's *status*
+
+`normalise_plan` computes rather than reads: the spec hash (§3.5's content
+addressing), the spec id, the graph's `draft` state, and every node's mutable
+run state. Whatever the document claimed about those is discarded.
+
+Each of those is a hole if taken on trust. An agent-chosen spec hash is content
+addressing in name only. An agent-declared `"state": "active"` skips the only
+human gate in the system — a test feeds exactly that payload and asserts the
+plan still lands as `draft`. And a node arriving with `attempts: 2` would make
+replay diverge from the moment it was written.
 
 ### Claude Code does not commit
 

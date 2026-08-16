@@ -43,7 +43,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -110,6 +110,43 @@ class Runner(Protocol):
         Surfaced by ``redgear doctor``. Adapter flags change between releases
         of a third-party CLI, so being able to see the installed version is
         what makes drift diagnosable rather than mysterious (section 2.4).
+        """
+        ...
+
+
+@runtime_checkable
+class PlanRunner(Protocol):
+    """A dispatch that returns a **document** rather than an outcome contract.
+
+    Section 3.2 has the planner go "through ``runner.py``" like the loop does,
+    and G5 means planning is no exception -- redgear never calls a model. But
+    it cannot reuse :meth:`Runner.dispatch`: that returns a ``TurnResult``,
+    whose only free-text field is a 1500-character ``summary``. A 41-node plan
+    does not fit, and widening ``TurnResult`` to carry one would pollute the
+    loop's type for the planner's benefit.
+
+    So the two dispatches are separate shapes because they genuinely differ: a
+    task turn reports an outcome and edits files, a planning turn returns a
+    document and edits nothing. The second implementation (the test fake)
+    exists on day one, which is the same justification section 6.1 gives for
+    ``Runner`` itself.
+    """
+
+    def dispatch_json(
+        self,
+        prompt: str,
+        allowed_tools: list[str],
+        cwd: Path,
+        timeout_s: int,
+        max_turns: int,
+        schema: Mapping[str, object],
+    ) -> JsonValue:
+        """Run one turn and return its structured output, parsed.
+
+        ``schema`` is passed to the CLI so the reply is schema-conforming by
+        construction rather than by hope. Raises :class:`RunnerError` when
+        there is no parseable document -- the planner's retry loop is about
+        *invalid plans*, not about a broken integration.
         """
         ...
 
@@ -261,6 +298,11 @@ def _truncate(text: str) -> str:
     return encoded[:_MAX_CAPTURE_BYTES].decode("utf-8", errors="replace") + _TRUNCATION_NOTE
 
 
+def _load_json(text: str) -> JsonValue:
+    parsed: JsonValue = json.loads(text)
+    return parsed
+
+
 def _as_map(value: JsonValue) -> dict[str, JsonValue]:
     return value if isinstance(value, dict) else {}
 
@@ -314,7 +356,14 @@ class ClaudeCodeRunner:
         tools.extend(bash_rule(prefix) for prefix in self.config.bash_prefixes)
         return tools
 
-    def build_argv(self, *, prompt: str, allowed_tools: Sequence[str], max_turns: int) -> list[str]:
+    def build_argv(
+        self,
+        *,
+        prompt: str,
+        allowed_tools: Sequence[str],
+        max_turns: int,
+        schema: Mapping[str, object] | None = None,
+    ) -> list[str]:
         """Section 6.2's invocation, as a list.
 
         Every element is discrete. The prompt is one element and is never
@@ -344,7 +393,7 @@ class ClaudeCodeRunner:
             # This is what makes the section 5.3 outcome contract mechanical
             # rather than a hope that the agent formats correctly.
             "--json-schema",
-            json.dumps(agent_report_schema(), sort_keys=True),
+            json.dumps(schema if schema is not None else agent_report_schema(), sort_keys=True),
             "--allowedTools",
             ",".join(allowed_tools),
             "--max-turns",
@@ -416,6 +465,63 @@ class ClaudeCodeRunner:
             "the agent CLI returned an unparseable result twice; this is an integration bug",
             detail=last_detail,
         )
+
+    def dispatch_json(
+        self,
+        prompt: str,
+        allowed_tools: list[str],
+        cwd: Path,
+        timeout_s: int,
+        max_turns: int,
+        schema: Mapping[str, object],
+    ) -> JsonValue:
+        """One dispatch that returns a document (the :class:`PlanRunner` seam).
+
+        Shares the spawn, the artifact persistence and the environment policy
+        with :meth:`dispatch`; differs only in what it asks for and what it
+        gives back. There is no retry here -- the planner runs its own bounded
+        retry loop over *invalid plans*, and a second layer underneath it
+        would multiply the attempts without saying so.
+        """
+        argv = self.build_argv(
+            prompt=prompt, allowed_tools=allowed_tools, max_turns=max_turns, schema=schema
+        )
+        directory = self._turn_dir()
+        self._persist_argv(directory, argv)
+
+        outcome = self._spawn(argv, cwd=cwd, timeout_s=timeout_s, directory=directory)
+        if outcome is None:
+            raise RunnerError(
+                f"the planning dispatch exceeded its {timeout_s}s wall clock",
+                detail={"raw_stdout": str(directory / "agent_stdout.log")},
+            )
+
+        stdout, stderr, exit_code = outcome
+        try:
+            payload = _as_map(_load_json(stdout))
+        except json.JSONDecodeError:
+            payload = {}
+
+        # Same rule as a task turn: the exit code is recorded, never consulted.
+        # A run that failed internally says so in the payload (6.4 rules 1-2).
+        if not payload or payload.get("is_error") is True:
+            raise RunnerError(
+                "the planning dispatch returned no usable document",
+                detail={
+                    "exit_code": exit_code,
+                    "stdout_head": stdout.strip()[:400],
+                    "stderr_head": stderr.strip()[:200],
+                    "raw_stdout": str(directory / "agent_stdout.log"),
+                },
+            )
+
+        structured = payload.get("structured_output")
+        if structured is None:
+            raise RunnerError(
+                "the planning dispatch returned no structured output",
+                detail={"raw_stdout": str(directory / "agent_stdout.log")},
+            )
+        return structured
 
     def version(self) -> str:
         """The installed CLI's version, or a readable note if it is absent.

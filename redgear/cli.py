@@ -38,7 +38,7 @@ from typing import Annotated
 import typer
 from rich.console import Console
 from rich.table import Table
-from redgear import __version__, gitctx, orchestrator, state_engine, verifier
+from redgear import __version__, gitctx, orchestrator, planner, state_engine, verifier
 from redgear.budget import request_stop
 from redgear.errors import JsonValue, PlanUnreviewedError, RedgearError
 from redgear.events import replay as replay_events
@@ -247,6 +247,72 @@ def _dry_run(root: Path, *, only: str | None) -> None:
         console.print()
 
     console.print(f"[green]{len(composed)} prompt(s) composed. Nothing was dispatched.[/green]")
+
+
+# ---------------------------------------------------------------------------
+# plan / approve -- section 3.3's gate, deliberately two commands
+# ---------------------------------------------------------------------------
+
+
+@app.command(name="plan")
+def plan_command(
+    source: Annotated[Path, typer.Option("--from", help="Requirements document to plan from.")],
+    repo: RepoOption = None,
+) -> None:
+    """Generate a plan from a requirements document. Leaves it in `draft`."""
+    root = repo or _repo_default()
+    _require_state_dir(root)
+
+    if not source.is_file():
+        raise _fail(
+            RedgearError(f"no such document: {source}", detail={"path": str(source)})
+        ) from None
+
+    agent = ClaudeCodeRunner(
+        config=ClaudeCodeConfig(),
+        artifacts_root=redgear_dir(root) / "runs" / "planner",
+    )
+    console.print("[bold]redgear plan[/bold]")
+    console.print("  the planner is dispatched [cyan]read-only[/cyan] (Read, Glob, Grep)")
+    console.print()
+
+    try:
+        result = planner.generate_plan(
+            root, runner=agent, source_document=source.read_text(encoding="utf-8")
+        )
+    except RedgearError as error:
+        raise _fail(error) from error
+
+    console.print(
+        f"[green]plan written[/green] — {len(result.graph.nodes)} task(s), "
+        f"spec {result.spec.spec_id}, after {result.attempts} attempt(s)"
+    )
+    console.print()
+    # Section 3.3 is a *human* gate. The CLI's job is to make sure nobody
+    # mistakes a generated plan for an approved one.
+    console.print("[yellow]This plan is a DRAFT and will not run.[/yellow]")
+    console.print("Read it, then approve it explicitly:")
+    console.print("  [cyan]redgear status[/cyan]                 # see the tasks")
+    console.print("  [cyan]redgear approve --by <your name>[/cyan]")
+
+
+@app.command()
+def approve(
+    by: Annotated[str, typer.Option("--by", help="Who is approving this plan.")],
+    repo: RepoOption = None,
+) -> None:
+    """Approve a draft plan, recording who approved which spec version."""
+    root = repo or _repo_default()
+    _require_state_dir(root)
+
+    try:
+        graph = planner.approve_plan(root, approved_by=by)
+    except RedgearError as error:
+        raise _fail(error) from error
+
+    console.print(f"[green]approved[/green] by {by} — {len(graph.nodes)} task(s) now executable")
+    console.print(f"  spec: [dim]{graph.spec_hash}[/dim]")
+    console.print("Editing the spec after this invalidates the approval (§3.3).")
 
 
 # ---------------------------------------------------------------------------

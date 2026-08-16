@@ -519,3 +519,82 @@ def build(task: TaskNode, claim: Claim, context: PromptContext) -> str:
             },
         )
     return prompt
+
+
+# ---------------------------------------------------------------------------
+# The planning prompt -- section 3.2
+# ---------------------------------------------------------------------------
+
+_PLAN_ROLE = """You are producing a project plan for redgear, an orchestrator that will execute
+it one task at a time and verify every task independently. You are NOT writing
+code and you have read-only tools: Read, Glob and Grep. Read the repository to
+ground the plan in what is actually there, then return the plan as JSON
+matching the provided schema."""
+
+_PLAN_RULES = """## Rules the plan must satisfy
+
+These are validated mechanically before anyone sees the plan. A plan that
+breaks one is rejected and you are asked again, so it is cheaper to satisfy
+them now.
+
+1. Every requirement carries at least one acceptance criterion phrased as a
+   testable assertion -- something a test can be written against, not a
+   sentiment.
+2. Every `implementation` task is preceded by a `test_authoring` task it
+   inherits criteria from. There are NO orphan implementation tasks: an
+   implementation node never authors its own acceptance criteria, because an
+   agent that writes both the tests and the code they check is grading its own
+   homework.
+3. Scope globs are as narrow as the task allows. A task writable across the
+   whole of `src/**` is a planning failure, not a convenience -- name the
+   directory or the module the task actually touches.
+4. `writable_globs` and `frozen_globs` never overlap. For a `test_authoring`
+   task the tests are writable and the source is frozen; for an
+   `implementation` task it is the other way round.
+5. `out_of_scope` is populated. It is the field that stops an agent from
+   helpfully building things nobody asked for.
+6. The dependency graph is acyclic and every node is reachable."""
+
+
+def build_planning_prompt(source_document: str, *, problems: Sequence[str] = ()) -> str:
+    """Compose the one-shot planning prompt (section 3.2).
+
+    The source document is **untrusted** (G7). It is arbitrary text from
+    outside the trusted plan -- a PRD someone pasted, a README, a ticket
+    export -- and it is going into a prompt held by an agent with tool access.
+    It gets exactly the same treatment as harness output: fenced, markers
+    escaped, ANSI stripped, and line-leading headings neutered so it cannot
+    forge a section boundary.
+
+    ``problems`` carries validation failures from a previous attempt (section
+    3.4). Same principle as the loop's corrective prompt: the planner is told
+    precisely what was wrong, because "the plan was invalid" produces an
+    identical plan.
+    """
+    blocks = [
+        "# redgear planning",
+        "## Role\n\n" + _PLAN_ROLE,
+        _PLAN_RULES,
+    ]
+
+    if problems:
+        listed = "\n".join(f"- {problem}" for problem in problems)
+        blocks.append(
+            "## Your previous plan was rejected\n\n"
+            "Fix exactly these and return the whole plan again:\n\n" + listed
+        )
+    else:
+        blocks.append("## Your previous plan was rejected\n\nnone -- this is the first attempt.")
+
+    blocks.append(
+        "## Source document\n\n"
+        + _UNTRUSTED_PREAMBLE.replace("captured output from a test runner", "a source document")
+        + "\n\n"
+        + UNTRUSTED_BEGIN
+        + "\n"
+        + sanitise_untrusted(source_document, "")
+        + "\n"
+        + UNTRUSTED_END
+    )
+
+    return "\n\n".join(blocks) + "\n"

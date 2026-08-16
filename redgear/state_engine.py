@@ -44,6 +44,7 @@ from redgear.paths import (
     find_scope_overlaps,
     match_glob,
     redgear_dir,
+    spec_path,
     task_graph_path,
 )
 from redgear.schemas import (
@@ -53,6 +54,7 @@ from redgear.schemas import (
     Event,
     GateName,
     PriorAttempt,
+    Spec,
     TaskGraph,
     TaskNode,
     TurnOutcome,
@@ -883,3 +885,68 @@ def plan_definition(graph: TaskGraph) -> TaskGraph:
         for node in graph.nodes
     ]
     return recompute_readiness(graph.model_copy(update={"nodes": pristine}))
+
+
+def persist_plan(
+    repo_root: Path,
+    spec: Spec,
+    graph: TaskGraph,
+    *,
+    source_document: str,
+    actor: str = "engine",
+) -> None:
+    """Write a generated plan and record that it was generated (T-0037).
+
+    Spec first, then the graph, then the event. The order matters on a crash:
+    a spec with no graph is an obviously incomplete plan, whereas a graph
+    pointing at a spec hash nothing on disk produces is a plan that looks
+    complete and is not.
+    """
+    target = spec_path(repo_root)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(
+        json.dumps(spec.model_dump(mode="json"), indent=2, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    persist_graph(repo_root, graph)
+
+    append_event(
+        events_path(repo_root),
+        {
+            "event": "plan_generated",
+            "ts": _stamp(_utc_now()),
+            "actor": actor,
+            "spec_hash": spec.hash,
+            "node_count": len(graph.nodes),
+            "edge_count": len(graph.edges),
+            # The plan's shape and hash, never its contents (section 3.6):
+            # duplicating the graph into the log would create two sources of
+            # truth for structure and guarantee they drift.
+            "source_document": source_document,
+        },
+    )
+
+
+def approve_plan(repo_root: Path, graph: TaskGraph, *, approved_by: str) -> TaskGraph:
+    """Move the graph draft -> active and append `plan_approved`.
+
+    The event records the `spec_hash` because that is what makes approval
+    *specific* (section 3.3). An approval that did not say which spec version
+    it covered would let a human approve one plan and the loop execute
+    another.
+    """
+    now = _utc_now()
+    approved = graph.model_copy(update={"state": "active"})
+
+    append_event(
+        events_path(repo_root),
+        {
+            "event": "plan_approved",
+            "ts": _stamp(now),
+            "actor": approved_by,
+            "spec_hash": graph.spec_hash,
+            "approved_by": approved_by,
+        },
+    )
+    persist_graph(repo_root, approved)
+    return approved
