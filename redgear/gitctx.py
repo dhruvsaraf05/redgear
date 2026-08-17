@@ -50,13 +50,30 @@ class ChangedFile:
 
 
 def _run_git(repo_root: Path, *args: str) -> str:
-    """Run one git command. ``shell=False``, fixed argv (section 11.1 rule 1)."""
+    """Run one git command. ``shell=False``, fixed argv (section 11.1 rule 1).
+
+    ``encoding="utf-8"`` is explicit, not merely ``text=True``. Git's own
+    porcelain output is UTF-8 regardless of the host locale, but Python's
+    default text-mode decode falls back to
+    ``locale.getpreferredencoding()`` -- cp1252 on a plain Windows install.
+    A diff or path containing a byte cp1252 has no mapping for (e.g. a
+    right-quote character git occasionally emits) then fails to decode
+    inside ``subprocess``'s reader thread, silently, in a way `check=True`
+    never sees because it looks at the exit code alone: the call reports
+    success with ``stdout`` left ``None``. ``errors="replace"`` is the
+    fallback for whatever that still cannot decode, since a diff is
+    diagnostic text (section 1.4 G7 applies the same way to it as to any
+    other harness output) and must never raise or return nothing over one
+    unrepresentable byte.
+    """
     try:
         result = subprocess.run(  # noqa: S603
             ["git", *args],  # noqa: S607 - resolved via PATH, fixed argv
             cwd=repo_root,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=True,
         )
     except FileNotFoundError as exc:

@@ -282,7 +282,7 @@ def run(
             prompt = prompt_engine.build(task, claim, context)
 
             # --- C. DISPATCH ------------------------------------------------
-            turn = _dispatch_with_one_retry(
+            dispatched = _dispatch_with_one_retry(
                 repo_root,
                 runner=runner,
                 run_id=run_id,
@@ -294,10 +294,15 @@ def run(
                 budget=budget,
                 actor=actor,
             )
-            if turn is None:
+            if dispatched is None:
                 # Two unparseable results running. An integration bug, and it
                 # must be loud rather than retried forever (section 6.4 r4).
                 return finish("runner_error")
+            # `dispatch_iteration` is which of the (up to two) prompt
+            # directories actually produced this result -- section 2.3 nests
+            # a verification's proof/ under the same iteration as the prompt
+            # that led to it, so this is what `persist_proof` below needs.
+            turn, dispatch_iteration = dispatched
 
             state_engine.record_turn(
                 repo_root, task_id=task.id, attempt=attempt, result=turn, actor=actor
@@ -328,6 +333,19 @@ def run(
                 criteria=criteria,
             )
             proof_id = f"{run_id}-{task.id}-{attempt:02d}"
+
+            # The working tree is uncommitted and keeps changing as the run
+            # continues (redgear never commits -- G6), so the diff has to be
+            # captured now or it is gone by the time anything asks for it
+            # later. FR-12 AC-4 needs it retrievable per attempt after the
+            # fact, not only true in the instant the gate ran.
+            state_engine.persist_proof(
+                repo_root,
+                run_id,
+                dispatch_iteration,
+                proof,
+                diff=gitctx.diff_patch(repo_root, claim.base_commit),
+            )
 
             # --- E. DECIDE --------------------------------------------------
             if proof.verdict is Verdict.PASS:
@@ -391,7 +409,7 @@ def _dispatch_with_one_retry(
     tools: Sequence[str],
     budget: Budget,
     actor: str,
-) -> TurnResult | None:
+) -> tuple[TurnResult, int] | None:
     """Dispatch, retrying once on an unparseable result. ``None`` means both
     tries failed to parse.
 
@@ -399,12 +417,18 @@ def _dispatch_with_one_retry(
     4), so it never touches the attempt counter. Each try persists its prompt
     first and separately, because G4 is about what was actually sent -- two
     dispatches are two records even when the bytes are identical.
+
+    Returns the winning try's iteration number alongside its result, so the
+    caller can persist a proof under the same iteration directory as the
+    prompt that actually produced it (section 2.3) rather than the first
+    (failed-to-parse) try's directory.
     """
     for index in range(_MAX_PARSE_ATTEMPTS):
+        dispatch_iteration = iteration * _MAX_PARSE_ATTEMPTS + index
         state_engine.persist_prompt(
             repo_root,
             run_id,
-            iteration * _MAX_PARSE_ATTEMPTS + index,
+            dispatch_iteration,
             prompt,
             task_id=task.id,
             attempt=attempt,
@@ -419,7 +443,7 @@ def _dispatch_with_one_retry(
             budget.max_turns_per_dispatch,
         )
         if turn.parse_ok:
-            return turn
+            return turn, dispatch_iteration
     return None
 
 

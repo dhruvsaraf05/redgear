@@ -7,35 +7,36 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0037 (planner + approval gate). Every module in §2.2
-exists except the control plane. **The adapter is still unverified against a
-real CLI** — see §5.*
+*Last updated: after T-0039 (`api/app.py` — read-only control plane). Every
+module in §2.2 exists except the Next.js UI. **The adapter is still
+unverified against a real CLI** — see §5.*
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0037` are done.** The full arc exists: `redgear plan`
+**`T-0001` through `T-0039` are done.** The full arc exists: `redgear plan`
 generates a plan read-only, `redgear approve` gates it behind a named human,
-and `redgear run` drives it. Next up is **`T-0038`/`T-0039` — `api/app.py`**,
-the read-only control plane.
+`redgear run` drives it, and `redgear ui` now serves a read-only FastAPI
+control plane over the event log. Next up is **`T-0040`** — the Next.js web
+UI (the API it talks to already exists; see the T-0038/39 entry below).
 
 ⚠️ **Two things are true at once and both matter.** The adapter is written and
 fully tested against recorded payloads, but those payloads are **synthetic**
 and it has **never been run against a real CLI** — no `claude` was on PATH.
 And the self-hosting blockers from T-0033 are unchanged: no approved plan, and
-no event log behind the 35 finished tasks. See §5.
+no event log behind the 39 finished tasks. See §5.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **380 passed, 1 skipped** (was 355) |
-| Suite runtime | **Unreliable on this machine — measured 83 s to 240 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
+| Test suite | **393 passed, 1 skipped** (was 380) |
+| Suite runtime | **Unreliable on this machine — measured 83 s to 271 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter**), `prompt_engine`, `orchestrator`, `cli`, `planner` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter**), `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/app.py` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
 | Golden prompts | `tests/snapshots/` — 5 files. A prompt change is now a reviewable diff. |
-| Not yet built | `api/` (T-0038), `ui/` (T-0040), packaging (T-0041) |
+| Not yet built | `ui/` (T-0040 — the Next.js half; the API half of `redgear ui` exists now), packaging (T-0041) |
 | Crossover | **Not reached.** §4.6 places it at T-0033; in practice it needs T-0034 (adapter) and an approved plan. §5. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
@@ -69,8 +70,8 @@ That default is a footgun and is written up in §2.
 | T-0032/33 | test/impl | done | `cli.py` — init, run, status, stop, verify, rebuild, log, doctor |
 | T-0034/35 | test/impl | done* | Claude Code adapter. *never run against a real CLI, §5 |
 | T-0036/37 | test/impl | done | `planner.py` — plan generation + approval gate |
-| **T-0038/39** | test/impl | **next** | `api/app.py` — read-only control plane |
-| T-0040 | scaf | todo | control plane UI |
+| T-0038/39 | test/impl | done | `api/app.py` — read-only control plane. Also added `state_engine.persist_proof` and wired it into `orchestrator.run` (§2), and the API half of `redgear ui` (§9) |
+| **T-0040** | scaf | **next** | control plane UI (Next.js) — the API it talks to already exists |
 | T-0041 | scaf | todo | packaging and release |
 
 ---
@@ -472,6 +473,75 @@ The human commits, every time. This is G6 (`redgear` never commits in the target
 repo) applied to the humans-driving-Claude-Code phase. Claude Code leaves work
 uncommitted and reports what changed plus suggested commit messages.
 
+### Proof artifacts were never persisted; `state_engine.persist_proof` closes that at T-0039
+
+`verifier.run_gates` has always computed a `Proof` and handed it back to the
+caller in memory. Nothing wrote it to disk. Section 2.3 documents
+`runs/<run_id>/iterations/<NNNN>/proof/{verdict.json,diff.patch}` as part of
+the normative layout, and FR-12 AC-4 ("Proof artifacts including the raw diff
+are retrievable per attempt") cannot be true against a system that never
+writes them — this was found while building T-0038's tests, not invented for
+this task.
+
+`persist_proof(repo_root, run_id, iteration, proof, *, diff)` writes both
+files under the *same* iteration directory `persist_prompt` already uses for
+that attempt's dispatch, and is called from `orchestrator.run` right after a
+proof is computed, for both the pass and fail paths. No new event type: the
+same relationship `prompt_dispatched`'s `prompt_path` has to `prompt.txt`
+applies here — `task_verified`/`task_rejected` already carry `proof_id`, and
+these are the artifacts that id points at.
+
+The diff has to be captured **at verification time**, not recomputed later.
+redgear never commits (G6), so the working tree keeps accumulating uncommitted
+changes across tasks within one run; a diff against `base_commit` computed
+after the fact would include whatever later tasks wrote too, or the baseline
+commit itself may no longer mean what it meant when this attempt ran. Capture
+now is the only way "retrievable per attempt" is honest.
+
+`_dispatch_with_one_retry` now returns `tuple[TurnResult, int] | None` instead
+of `TurnResult | None`, so the caller knows *which* of up to two dispatch
+tries actually produced the result being verified, and can persist the proof
+in that same iteration's directory rather than the first (parse-failed) try's.
+It is a private function with one call site; no test imports it directly.
+
+### `mark_verified`'s `task_verified.attempt` is off by one — found, not fixed
+
+`state_engine.mark_verified` writes `"attempt": node.attempts` from *before*
+the transition it is recording — the count of prior rejections, not the
+number of the attempt just verified. On a first-try pass that is `0`; after
+one rejection it is `1`, one behind what `prompt_dispatched` and
+`turn_completed` both recorded for the identical turn (`task.attempts + 1`,
+computed in `orchestrator.run`). This is a real defect in already-verified
+T-0014/15 code, discovered while building T-0039's proof-lookup logic — no
+existing test pins the numeric value (`test_state_write.py` only asserts
+event *kinds* and ordering, never `task_verified.attempt`'s value), so it was
+silently wrong rather than frozen-correct.
+
+**Not fixed here.** `state_engine.py` is not otherwise in scope for an
+`api/app.py` task, no test currently depends on the wrong value (so nothing
+would force a defect edit under §6's escape hatch), and the blast radius of a
+fix is unknown without checking every reader of this field. `redgear/api/app.py`
+works around it instead: a verified attempt's number is derived from how many
+`task_rejected` events preceded it for that task, which is what every other
+event already agrees on. See §5 for the open question of whether to fix
+`state_engine.py` itself.
+
+### The amended G5 and the empty `docs/adr/` — both authorized, not discovered this session
+
+Two changes landed by explicit human instruction rather than as findings:
+
+* **G5's socket bullet** now reads "never open an **outbound** connection"
+  rather than "never open a socket" — the literal old wording forbade the
+  listening socket `redgear ui` (§9) has always been specified to bind.
+  `CLAUDE.md` §1.4 now names the control plane as the sole, deliberate
+  exception: it accepts local connections, initiates none.
+* **`docs/adr/`** sat empty through 37 tasks while ~30 real decisions landed
+  in this section instead. Rather than backfilling thirty ADR files,
+  `docs/adr/0001-progress-md-records-decisions.md` records that PROGRESS §2
+  *is* the decision record for this project, and `CLAUDE.md` §11.3 now points
+  here instead of at `docs/adr/`. See the ADR itself for the full reasoning
+  and what is lost by not using per-decision files.
+
 ---
 
 ## 3. Traps already hit
@@ -816,6 +886,82 @@ catch-22.
 **Fix:** build it explicitly —
 `v: list[JsonValue] = []` then `v.extend(...)`. Satisfies both.
 
+### `pyproject.toml` never gained the dependencies §2.1 always specified — invisible for 37 tasks
+
+**Symptom:** `pip install -e ".[dev]"` succeeded and the full suite stayed
+green through T-0001–T-0037, even though `CLAUDE.md` §2.1 has specified
+`fastapi >= 0.111 + uvicorn` ("Control plane API") since the contract was
+first written. Nothing failed until T-0038 tried to `import fastapi` for the
+first time and it was not installed.
+
+**Cause:** T-0001 (repository bootstrap) is the task that scaffolds
+`pyproject.toml`, and it built the dependency list from what the *first nine
+modules* needed (`pydantic`, `typer`, `rich`), not from the full §2.1 table —
+reasonably, since the control plane was 37 tasks away. But nothing ever
+diffed the manifest against the contract's stack table afterward, so the gap
+sat there, silent, because nothing exercised it. A scaffold task's job is
+partly to encode a *promise* about what the project will need; a promise
+nothing checks is invisible right up until the moment something needs it,
+and then it looks like a surprise rather than a known gap.
+
+**Fix:** added at T-0038/T-0039, when `api/app.py` first needed `fastapi` and
+`uvicorn` (runtime) and `httpx` (dev, for `fastapi.testclient.TestClient` —
+pinned exactly, per the T-0024 version-drift trap above, not floored like the
+other runtime deps).
+
+**General lesson:** a scaffold task that declares a stack in the contract but
+not in the manifest fails silently until something needs it. Worth a periodic
+check — `pyproject.toml`'s dependency list against `CLAUDE.md` §2.1's table —
+rather than waiting for the next unbuilt module to notice on its own.
+
+### `git`'s output is UTF-8 regardless of locale; Windows text-mode decode is not
+
+**Symptom:** `state_engine.persist_proof` received `diff=None` and crashed
+with `AttributeError: 'NoneType' object has no attribute 'encode'` — deep
+inside a call to `gitctx.diff_patch` that, by its own source, cannot return
+`None`. Reproducible for specific fixture repos and specific test runs, not
+others; the byte position in the reported `UnicodeDecodeError` moved between
+runs, which was the first sign this had nothing to do with the diff content
+itself.
+
+**Cause:** `gitctx._run_git`'s `subprocess.run(..., text=True)` did not pass
+an explicit `encoding=`, so Python decoded git's stdout using
+`locale.getpreferredencoding()` — **`cp1252`** on this machine, a plain
+Windows install. Git itself emits UTF-8 regardless of host locale. When a
+byte git wrote (e.g. as part of a right-quote character in some git-generated
+text) has no mapping in cp1252 (`0x9d` is one of several undefined codepoints
+in that table), the decode raises **inside `subprocess`'s internal reader
+thread** — invisible to the caller as an exception, because `capture_output=True`
+spawns a background thread to read one stream while the main thread reads the
+other, and an exception in that thread does not propagate to
+`subprocess.run`'s return. `check=True` only inspects the exit code, which was
+`0` (git succeeded). The net effect: `result.stdout` silently ends up `None`
+even though the git command itself worked, and every caller downstream is
+unprepared for a "successful" git call returning no output at all.
+
+This was latent in `gitctx.py` since T-0021 — every `_run_git` call was
+exposed to it — and simply had not been hit by content that happened to
+trigger it until `persist_proof`'s new, unconditional `diff_patch` call in
+`orchestrator.run` (T-0039) started running real git diffs on every task
+attempt in tests that previously used a stubbed verifier and never touched
+real git output at that volume.
+
+**Fix:** `gitctx._run_git` now passes `encoding="utf-8", errors="replace"`
+explicitly, matching git's actual output encoding rather than trusting the
+host locale, with `errors="replace"` as the fallback for the (now much
+smaller) set of bytes that still cannot decode — diagnostic text must never
+raise or silently vanish over one unrepresentable byte (§1.4 G7's reasoning
+about harness output applies equally to a diff).
+
+**Not yet applied:** `state_engine.py`'s own private `_git` helper (used by
+`claim_task` for `rev-parse HEAD` and the frozen-digest file listing) has the
+same `text=True` pattern without `encoding=`. It has not been observed to
+trigger this — commit hashes and typical file paths are plain ASCII — but it
+is the same latent shape. §5's open item about replacing `state_engine._git`
+with `gitctx`'s functions (deferred since T-0021) would fix this as a side
+effect; noted here so it is not forgotten if that replacement keeps being
+deferred.
+
 ---
 
 ## 4. Frozen-file edits made under human authorization
@@ -872,6 +1018,18 @@ have forced one — `coverage --source` rejecting a file path, and the
 froze, or fixed entirely inside `redgear/`. The §6 discipline of re-reading
 each new test file before ending Phase 1 is what caught the first.
 
+**T-0038/T-0039 required no frozen-file edits.** `tests/test_api.py` builds
+its fixture state entirely through `state_engine`'s existing public write
+functions (`claim_task`, `persist_prompt`, `record_turn`, `reject_task`,
+`mark_verified`) rather than hand-assembled JSON, and the two proof artifacts
+`persist_proof` did not yet exist to write are constructed by hand in the
+exact shape §2.3 already documents — so Phase 2 could implement both the
+reader and the (previously-missing) writer without needing to touch a single
+already-frozen test to make the pair pass. `pyproject.toml`'s dependency
+addition for this pair (Fix 1, `fastapi`/`uvicorn`/`httpx`) happened *before*
+Phase 1 began, under separate, explicit authorization — not as a Phase-2
+frozen-file edit.
+
 ---
 
 ## 5. Open questions — need a human decision
@@ -911,7 +1069,7 @@ suite then fails, the adapter was wrong and the procedure worked.
 `task_graph.json`. Every node in that projection still sits in its *initial*
 state — `T-0001` is `ready`, everything else `blocked`. So redgear pointed at
 its own repository today would select **T-0001 and try to bootstrap a
-repository that has been bootstrapped for 33 tasks**.
+repository that has been bootstrapped for 39 tasks**.
 
 This is the one that matters, and §4.6 warned about it in advance:
 
@@ -937,23 +1095,32 @@ all unattractive:
   forever, or those nodes must be trimmed from the graph.
 - **Let redgear re-execute from T-0001.** Honest and absurd.
 
-**2. There is no concrete `Runner`.** `redgear/runner.py` exports the protocol
-and `allowed_tools_for`, nothing else — verified by inspecting its exports. The
-Claude Code adapter is T-0034. `redgear run` therefore refuses with a clear
-message pointing at `--dry-run`, rather than pretending to dispatch.
+**2. RESOLVED at T-0034/35.** `redgear/runner.py` now ships `ClaudeCodeRunner`
+alongside the protocol, and `cli.py`'s `run`/`plan` commands construct one.
+This blocker no longer applies — though see the adapter's own open item above:
+a *concrete* `Runner` existing is not the same claim as it having been run
+against a real CLI.
 
-**3. The plan is `draft`, and nothing in scope can approve it.** `redgear run`
-correctly refuses with `E_PLAN_UNREVIEWED` (§3.3). The `approve` command
-belongs to T-0036/T-0037 with the planner, so today the only way to move the
-graph to `active` is hand-editing the file — which skips the `plan_approved`
-event that records *who* approved *which* `spec_hash`. That is a real gap in
-the audit trail, not a formality.
+**3. RESOLVED at T-0036/37.** `redgear approve --by <name>` (and, as of
+T-0038/39, `POST /plan/approve` on the API) now moves the graph `draft` →
+`active` and records the approver and `spec_hash` through
+`planner.approve_plan`, with a real `plan_approved` event — no more
+hand-editing the file to get past `E_PLAN_UNREVIEWED`.
 
-**What IS true at T-0033:** the full command surface exists and works,
-`redgear run --dry-run` composes real prompts against the real graph today,
-and every refusal on the path to a real run fires correctly and in the right
-order. The engine is complete; what is missing is an agent to drive and a
-history to stand on.
+**So of the three original blockers, only #1 still stands** — self-hosting
+still cannot start today, and it is the one that always mattered most: there
+is no event log behind the 39 finished tasks, so redgear pointed at its own
+repository would still select T-0001 and try to bootstrap a repository that
+has already been bootstrapped for 39 tasks. The tooling gap is closed; the
+audit-trail gap is not, and nothing below has changed which of the four
+options resolves it.
+
+**What IS true now:** the full command surface exists and works end to end —
+`redgear plan`, `redgear approve`, `redgear run` (with a real adapter,
+untested against a live CLI), `redgear ui` — and every refusal on the path to
+a real self-hosted run fires correctly and in the right order except the one
+this section is about. The engine is complete; what is missing is a history
+to stand on, and confirmation the adapter works against something real.
 
 ### Suite runtime, and why the number here keeps moving
 
@@ -1004,10 +1171,6 @@ other right now.**
 
 No option is free. This wants a deliberate call, not a default.
 
-### `E_NO_READY_TASK`: error or normal terminal condition?
-
-§4.1 says `None`; §4.7 says error code. See §2. Deferred to **T-0030**.
-
 ### `state_engine.py` still carries a private git helper
 
 T-0015 added `_git`, `_repo_files` and `_frozen_digest_map` to
@@ -1015,19 +1178,59 @@ T-0015 added `_git`, `_repo_files` and `_frozen_digest_map` to
 now (T-0021)**, and those three can be replaced by `gitctx.head_commit` and
 `gitctx.tracked_and_untracked`.
 
-Not done this turn, deliberately: it is a refactor of a module whose tests are
+Still not done, deliberately: it is a refactor of a module whose tests are
 frozen, so it deserves to be a considered step rather than a side effect. The
 duplication is small and harmless until then, but it means two code paths ask
 git the same questions — and only one of them has the repository-root guard
-described above.
+described above, and (as of T-0039, §3) only one of them decodes git's output
+as UTF-8 rather than the host locale. `state_engine._git` has the same
+`text=True`-without-`encoding` shape `gitctx._run_git` had; it just has not
+been observed to trip it yet, because the values it reads (commit hashes,
+typical file paths) are plain ASCII in every fixture so far. Replacing it
+would fix that as a side effect, which is one more reason this keeps coming
+back up rather than a new one.
 
 ### `E_INVALID_CLAIM` and `E_LEASE_EXPIRED` are declared but unimplemented
 
 Both are in §4.7. `locks.py` raises `RunLockedError` for a wrong-token release
 (where `E_INVALID_CLAIM` arguably belongs) and treats lease expiry as an
 *event*, not an error, so neither class exists yet. Consistent with the
-"registry grows as raisers land" rule, but worth a look when the orchestrator
-wires claims together at T-0030.
+"registry grows as raisers land" rule; still nobody has needed either badly
+enough to add it.
+
+### `mark_verified`'s `task_verified.attempt` field is wrong — fix, or leave documented?
+
+Found at T-0039 while building `api/app.py`'s proof lookup (§2, §3's frozen-file
+note). `state_engine.mark_verified` records `node.attempts` — the count of
+prior *rejections* — as the event's `attempt`, which is one behind the real
+attempt number every other event for the same turn agrees on
+(`prompt_dispatched`, `turn_completed`, and the `proof_id` string itself all
+use `task.attempts + 1`, computed in `orchestrator.run`). On a first-try pass
+this event says `attempt: 0`.
+
+Nothing currently reads `task_verified.attempt` except the new `api/app.py`,
+which works around it (§2) rather than trusting it. Two ways to close this
+properly:
+
+- **Fix `mark_verified`** to take the real attempt number as a parameter, the
+  way `reject_task` effectively does via its own `attempts + 1` computation,
+  and pass it from `orchestrator.run` (which already has `attempt` in scope
+  at the call site). Correct, small, and — checked directly — no frozen test
+  in `test_state_write.py` pins the wrong value, so this would not require an
+  authorized frozen-file edit. The risk is unknown readers: nothing greps for
+  `task_verified.attempt` today, but a fix changes what every *future* replay
+  of an *already-recorded* log reports for past verified tasks, which is a
+  live concern for exactly the kind of audit trail this project is.
+- **Leave it and keep working around it in readers.** Cheaper today, and the
+  workaround is small, but it means every future reader of `task_verified`
+  events has to know this field lies and rederive the real number the same
+  way `api/app.py` does, or repeat the bug.
+
+Recommendation: fix `mark_verified` directly — it is a one-parameter change,
+nothing currently depends on the wrong value, and "the log says something
+false" is a worse property to carry forward than "the log briefly disagreed
+with the code that reads it correctly." But this wants a decision, not an
+assumption, because of the "changes what past log entries mean" concern above.
 
 ---
 

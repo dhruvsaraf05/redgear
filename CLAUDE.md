@@ -161,7 +161,7 @@ All inference is delegated to the agent CLI subprocess, which authenticates with
 - Never import an LLM SDK (`anthropic`, `openai`, `google-genai`, `litellm`, `ollama`, or any wrapper).
 - Never **read, log, store, print, or branch on** the value of an auth environment variable. `ANTHROPIC_API_KEY` and friends will exist in the process environment.
 - redgear **may propagate** the parent environment to the agent subprocess. Propagation is not reading: pass `os.environ` through without inspecting auth keys, and redact any variable matching `(?i)(key|token|secret|password|credential)` from every log line and every event record.
-- Never open a socket from `redgear/`. No telemetry, no update checks, no crash reporting.
+- Never open an **outbound** connection from `redgear/`. No telemetry, no update checks, no crash reporting, no model API call. The read-only control plane (§9, `redgear ui`) binds a localhost listening socket and is the sole exception: it accepts local connections, initiates none, and adds zero egress. If a future feature seems to need outbound network, it is a separate opt-in package, not part of the engine.
 - Consequence worth stating in the README: redgear itself adds zero egress and costs zero tokens. All spend belongs to the user's own agent CLI session.
 
 #### G6 — Bounded autonomy
@@ -1313,7 +1313,7 @@ One documented manual procedure in `docs/agents/claude-code.md`: run `redgear ru
 ### 11.3 Working style
 
 - **When the spec is ambiguous, ask.** Do not pick a reading and proceed.
-- **When you make a design decision not covered here, write an ADR** into `docs/adr/` before writing the code.
+- **When you make a design decision not covered here, record it in `docs/PROGRESS.md` §2** before writing the code. See `docs/adr/0001-progress-md-records-decisions.md` for why a single running log replaces a per-decision ADR file for this project. Revisit if the project gains contributors beyond one person driving Claude Code per session.
 - **No speculative abstraction.** No plugin systems, no strategy patterns, no second-language seam. Adding a seam before the second implementation exists guarantees the wrong seam. `runner.py`'s protocol is the one exception, and it is justified because the fake runner is the second implementation and it ships on day one.
 - **Prefer boring.** A `for` loop over a comprehension chain. This is auditing infrastructure; readability under scrutiny beats elegance.
 - **Commit messages:** `<module>: <imperative summary>`. Example: `orchestrator: exit cleanly on STOP sentinel`.

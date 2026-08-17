@@ -54,6 +54,7 @@ from redgear.schemas import (
     Event,
     GateName,
     PriorAttempt,
+    Proof,
     Spec,
     TaskGraph,
     TaskNode,
@@ -798,6 +799,62 @@ def persist_prompt(
         },
     )
     return path
+
+
+def persist_proof(repo_root: Path, run_id: str, iteration: int, proof: Proof, *, diff: str) -> Path:
+    """Persist the verdict and raw diff for one verification pass (section 2.3).
+
+    Written under the *same* iteration directory as the prompt that produced
+    this attempt (`persist_prompt`'s `directory`), so a reader who has found
+    the dispatched prompt finds what it produced right next to it -- exactly
+    the layout section 2.3 documents.
+
+    No event accompanies this write, for the same reason `persist_prompt`
+    needs only `prompt_dispatched` rather than a second event for the file
+    itself: `task_verified` and `task_rejected` already carry `proof_id`, and
+    this is the artifact that id names. The relationship is the same one
+    `prompt_dispatched`'s `prompt_path` has to `prompt.txt` -- the event
+    records that something happened; the file is what happened.
+
+    The working tree is uncommitted at verification time and keeps changing
+    as the run continues (redgear never commits -- G6), so the diff is not
+    something a reader can recompute later from git alone. Capturing it now
+    is what makes "Proof artifacts including the raw diff are retrievable per
+    attempt" (FR-12) true after the fact rather than only true in the instant
+    the gate ran.
+    """
+    directory = _run_dir(repo_root, run_id) / "iterations" / f"{iteration:04d}" / "proof"
+    directory.mkdir(parents=True, exist_ok=True)
+
+    verdict_payload = (
+        json.dumps(proof.model_dump(mode="json"), indent=2, ensure_ascii=False) + "\n"
+    ).encode("utf-8")
+    verdict_path = directory / "verdict.json"
+    temp_verdict = verdict_path.with_name(f"{verdict_path.name}.{os.getpid()}.tmp")
+    try:
+        with temp_verdict.open("wb") as handle:
+            handle.write(verdict_payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_verdict, verdict_path)  # noqa: PTH105
+    except BaseException:
+        temp_verdict.unlink(missing_ok=True)
+        raise
+
+    diff_payload = diff.encode("utf-8")
+    diff_path = directory / "diff.patch"
+    temp_diff = diff_path.with_name(f"{diff_path.name}.{os.getpid()}.tmp")
+    try:
+        with temp_diff.open("wb") as handle:
+            handle.write(diff_payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_diff, diff_path)  # noqa: PTH105
+    except BaseException:
+        temp_diff.unlink(missing_ok=True)
+        raise
+
+    return directory
 
 
 def record_turn(

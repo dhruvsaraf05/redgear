@@ -36,9 +36,11 @@ from pathlib import Path
 from typing import Annotated
 
 import typer
+import uvicorn
 from rich.console import Console
 from rich.table import Table
 from redgear import __version__, gitctx, orchestrator, planner, state_engine, verifier
+from redgear.api.app import create_app
 from redgear.budget import request_stop
 from redgear.errors import JsonValue, PlanUnreviewedError, RedgearError
 from redgear.events import replay as replay_events
@@ -572,6 +574,39 @@ def doctor(repo: RepoOption = None) -> None:
     table.add_row("state dir", "present" if task_graph_path(root).is_file() else "absent")
     console.print(table)
     raise typer.Exit(0 if healthy else 1)
+
+
+# ---------------------------------------------------------------------------
+# ui
+# ---------------------------------------------------------------------------
+
+
+@app.command()
+def ui(
+    repo: RepoOption = None,
+    host: Annotated[
+        str, typer.Option("--host", help="Bind address. Loopback by default (§1.4 G5).")
+    ] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", help="Bind port.")] = 8787,
+) -> None:
+    """Serve the read-only control plane API (§9, FR-12).
+
+    This is the API half only -- the Next.js web UI is T-0040 and does not
+    exist yet. `/docs` on this server is a usable interface in the meantime.
+
+    Binds to loopback by default and nothing else: G5's amended wording
+    permits exactly this one listening socket ("accepts local connections,
+    initiates none") and no other. Passing `--host 0.0.0.0` is the caller's
+    choice to make, not this command's default.
+    """
+    root = repo or _repo_default()
+    _require_state_dir(root)
+
+    console.print("[bold]redgear ui[/bold]  (API only -- the web UI is T-0040, not yet built)")
+    console.print(f"  serving [cyan]http://{host}:{port}[/cyan]  (interactive docs at /docs)")
+    console.print()
+
+    uvicorn.run(create_app(root), host=host, port=port)
 
 
 def _probe(cmd: list[str]) -> bool:

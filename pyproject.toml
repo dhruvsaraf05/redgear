@@ -16,6 +16,8 @@ dependencies = [
     "pydantic>=2.7",
     "typer>=0.12",
     "rich",
+    "fastapi>=0.111",
+    "uvicorn>=0.30",
 ]
 
 [project.scripts]
@@ -40,6 +42,8 @@ dev = [
     "ruff==0.16.2",
     "pyyaml==6.0.3",
     "build==1.5.0",
+    # TestClient only, never imported under redgear/.
+    "httpx==0.28.1",
 ]
 
 [tool.hatch.build.targets.wheel]
