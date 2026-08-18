@@ -7,48 +7,46 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after manual verification of the Claude Code adapter against a
-real CLI (claude 2.1.229, Windows, 2026-08-19) and the resulting reconciliation
-— see §2. Every module in §2.2 exists except the Next.js UI. **The adapter is
-now verified**, within the scope of what three real dispatches can prove; see
-§2 and §5 for what that scope does and does not cover.*
+*Last updated: after T-0041 (packaging and release readiness) — the last task
+in the graph. Every module in §2.2 exists except the Next.js UI (T-0040,
+deliberately deferred, see §2). The spec was amended and re-hashed
+(`spec-97ee71`, supersedes `spec-dd2914`) to resolve the Python-version
+contradiction open since T-0021 and to record T-0040's deferral. The
+self-hosting claim is now stated plainly rather than left open — see §2 and
+§5.*
 
 ---
 
 ## 1. Where we are
 
-**`T-0001` through `T-0039` are done.** The full arc exists: `redgear plan`
-generates a plan read-only, `redgear approve` gates it behind a named human,
-`redgear run` drives it, and `redgear ui` now serves a read-only FastAPI
-control plane over the event log. Next up is **`T-0040`** — the Next.js web
-UI (the API it talks to already exists; see the T-0038/39 entry below).
+**`T-0041` — the graph's leaf task — is done.** So is every task except
+`T-0040`, which is **deliberately deferred**: the browser control plane UI is
+not built, not deleted, and not silently dropped — `FR-12`'s statement and
+`spec.json`'s `out_of_scope` both say so explicitly now, and the task stays
+in the graph, state unchanged. A deferred task is not a deleted one.
 
-**The Claude Code adapter has now been checked against a real CLI** — a status
-that held since T-0035 through T-0039 and is the single biggest change this
-entry records. `build_argv` needed no change at all; every flag it sends
-already matched what the real CLI accepted. Parsing did: `subtype` and
-`stop_reason` are confirmed unread (correctly — real payloads prove both are
-unreliable), `structured_output` is confirmed read directly, and
-`permission_denials` is confirmed unsurfaced (an open question, not a bug —
-see §5). Separately, a real defect in the CLI surface was found and fixed:
-`ClaudeCodeConfig.executable` had no way to be set from the command line, and
-a normal Windows install of Claude Code is not on PATH — `--executable` and
-`config.json → runner.executable` close that. See §2 for the full account.
-
-The self-hosting blockers from T-0033 are otherwise unchanged: no approved
-plan, and no event log behind the 39 finished tasks. See §5.
+The full arc exists: `redgear plan` generates a plan read-only, `redgear
+approve` gates it behind a named human, `redgear run` drives it, `redgear ui`
+serves a read-only FastAPI control plane, and the package builds, installs,
+and exposes a working `redgear` command from a clean wheel. **"Done" here
+still means the same thing it has meant since T-0002: built and verified by a
+human relaying prompts between sessions, not by redgear driving itself.**
+That is now stated in the README rather than left implicit — see §2 and §5.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **402 passed, 1 skipped** (was 393) |
+| Test suite | **402 passed, 1 skipped** (unchanged from T-0038/39 — this task touched no test file except one two-constant frozen-file edit, §4) |
 | Suite runtime | **Unreliable on this machine — measured 83 s to 463 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter**), `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/app.py` |
+| Coverage | **90.35%** (floor 85%) |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter, verified against a real CLI**), `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/app.py` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
 | Golden prompts | `tests/snapshots/` — 5 files. A prompt change is now a reviewable diff. |
-| Not yet built | `ui/` (T-0040 — the Next.js half; the API half of `redgear ui` exists now), packaging (T-0041) |
-| Crossover | **Not reached.** §4.6 places it at T-0033; in practice it needs T-0034 (adapter) and an approved plan. §5. |
+| Not built | `ui/` (T-0040, deliberately deferred post-1.0 — see above) |
+| Package | Builds clean (`python -m build`), installs from wheel with a working `redgear` entry point, manifest has nothing sensitive. See §2. |
+| Spec | `spec-97ee71` (supersedes `spec-dd2914`, history in `.redgear/spec/history/`) — NFR-10 now says 3.12, FR-12 now names the deferred UI. See §2. |
+| Crossover | **Still not reached.** No approved plan, no event log behind the 40 done tasks (T-0040 stays deliberately deferred, not counted as done) — see §2's "self-hosting claim" entry and §5. This is now a stated fact, not an open question about what to do — the four options from the previous entry are moot: the answer is "say so," not "fabricate, seed, or re-execute." |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
 commands come from configuration only) and the resolved inherited criteria.
@@ -82,8 +80,8 @@ That default is a footgun and is written up in §2.
 | T-0034/35 | test/impl | done | Claude Code adapter. Verified against a real CLI (2.1.229, Windows, 2026-08-19) — see §2 |
 | T-0036/37 | test/impl | done | `planner.py` — plan generation + approval gate |
 | T-0038/39 | test/impl | done | `api/app.py` — read-only control plane. Also added `state_engine.persist_proof` and wired it into `orchestrator.run` (§2), and the API half of `redgear ui` (§9) |
-| **T-0040** | scaf | **next** | control plane UI (Next.js) — the API it talks to already exists |
-| T-0041 | scaf | todo | packaging and release |
+| T-0040 | scaf | **deferred** | control plane UI (Next.js). Not built, not deleted — FR-12 and `out_of_scope` say so explicitly. The API it would talk to already exists |
+| T-0041 | scaf | **done** | packaging and release readiness — the graph's leaf task. Spec amended and re-hashed, README rewritten, wheel built and verified clean, `release.yml` fixed |
 
 ---
 
@@ -653,6 +651,94 @@ Four new tests in `tests/test_cli.py` cover precedence, a malformed or absent
 pass through every one of those states), and `doctor` naming the resolved
 executable rather than a hardcoded `claude`.
 
+### T-0041 — the spec amendment, carried out exactly per §3.5
+
+Open since T-0021: `spec.json`'s `NFR-10` said Python 3.11; `pyproject.toml`,
+CI, and `CLAUDE.md` §1.1 all said 3.12. Resolved by amending the spec rather
+than leaving the contradiction live, per the recommendation the T-0037
+orientation pass made and this task's own instruction confirmed.
+
+**What changed, and why each piece:**
+
+- `NFR-10`'s statement and first acceptance criterion now say 3.12. The
+  rationale gained a sentence explaining *why* 3.12 specifically: it is a
+  floor, not the development version — local development on this project runs
+  3.14, CI runs 3.12 deliberately to keep the floor honest, and nothing in the
+  codebase uses a 3.13+ feature, so raising it further would lock out users
+  for no benefit.
+- `FR-12`'s statement gained a sentence recording that the API half is
+  implemented (T-0038/T-0039) and the browser front end is deferred post-1.0
+  — folded into the same amendment rather than a second one, since both are
+  spec changes and §3.5 says nothing about batching them separately.
+- `out_of_scope` gained "Browser front end for the control plane (the
+  read-only API is implemented; the UI is deferred)".
+- Hash recomputed via `redgear.hashing.compute_spec_hash` directly (not
+  reimplemented by hand) against the mutated requirements/out_of_scope:
+  `sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6`,
+  `spec-97ee71`. `spec_id_from_hash` likewise, not hand-derived.
+- The pre-amendment spec, byte-identical to what shipped through T-0040,
+  written to `.redgear/spec/history/spec-dd2914.json` before the working
+  file was overwritten — order matters for the same crash-safety reason
+  `persist_plan` writes spec-then-graph-then-event (docs/PROGRESS.md's own
+  earlier entry on that): a missing history file is an obviously incomplete
+  amendment, a spec pointing at a `supersedes` id nothing on disk backs up
+  looks complete and is not.
+- `spec.json`'s own `supersedes` field set to `spec-dd2914`; `created_at`
+  updated to this session's date.
+- `task_graph.json`'s top-level `spec_hash` and **all 41 nodes'** `spec_hash`
+  updated to the new value, by script rather than by hand — a 41-node file
+  is not something to hand-edit when byte-exact hash matching is the pass
+  condition.
+
+**Verified, not assumed:** `tests/test_smoke.py`'s hash-recomputation tests
+(`test_spec_hash_recomputes`, `test_spec_id_derives_from_hash`,
+`test_graph_spec_hash_matches_spec`, `test_every_node_carries_current_spec_hash`)
+all passed against the new values on the first try — these tests exist
+precisely to catch a hand-edit that gets the hash wrong, and they did their
+job by staying green rather than needing to fire.
+
+**One frozen-file edit this forced**, recorded in §4: `tests/test_hashing.py`
+hardcodes `REAL_SPEC_HASH`/`REAL_SPEC_ID` as "the recorded, load-bearing
+value" of the *real* `spec.json` on disk — its own docstring says the point
+of these tests is to track the real file, not a frozen historical snapshot.
+Updating the two constants to the new value is the test doing its job, the
+same way `test_smoke.py`'s tests did; leaving them at the old value would
+make a correct amendment look like a bug.
+
+**One thing this task found but did not fix, out of scope:** `CLAUDE.md`
+§12.1's table still names `spec-dd2914` and the old hash. `CLAUDE.md` is not
+in T-0041's writable scope (`pyproject.toml`, `.github/**`, `README.md`,
+`docs/**`), and unlike `task_graph.json` — which Fix 1's own numbered steps
+require touching — nothing about updating the spec instructs touching
+`CLAUDE.md`. Reverted an initial edit there rather than keep it unauthorized.
+**§12.1 now states a stale spec id and hash and needs an authorized edit.**
+
+### The self-hosting claim — decided, not fabricated
+
+The four options this file previously listed for the T-0033 crossover gap
+(fabricate history, seed one labelled import event, start the log from here,
+let redgear re-execute from T-0001) are now moot. The decision made this
+task is none of them: **state plainly, in the README, that the loop has never
+driven itself end to end** — this codebase was hand-built through T-0041 with
+a human relaying every prompt between sessions, and say so without hedging.
+
+The reasoning is the same one the whole project is built on turned back on
+itself: a tool whose entire pitch is "an unverified claim is worthless" cannot
+ship with a fabricated audit trail as its own first artifact. Seeding
+`.redgear/events.jsonl` with `imported_from_manual_phase` events — the
+least-bad of the four original options — would still be redgear's own state
+directory asserting a history that did not happen through the mechanism it
+exists to audit. The README's "What's not done yet" section now says this
+directly rather than the previous open question doing so implicitly.
+
+**This does not close the underlying gap** — there is still no event log
+behind the 40 done tasks, and `redgear` pointed at its own repository today
+would still select T-0001 and try to bootstrap an already-bootstrapped tree.
+What changed is that the project no longer has an *open question* about what
+to say about this; it has a decided, stated answer. See §5 for what would
+actually need to happen for the crossover to become real (an approved plan
+and a genuine event log — no shortcut removes that).
+
 ---
 
 ## 3. Traps already hit
@@ -1141,9 +1227,56 @@ addition for this pair (Fix 1, `fastapi`/`uvicorn`/`httpx`) happened *before*
 Phase 1 began, under separate, explicit authorization — not as a Phase-2
 frozen-file edit.
 
+| `tests/test_hashing.py` | `REAL_SPEC_HASH`/`REAL_SPEC_ID` constants updated to the new spec's values (`spec-97ee71`) | Direct, mechanical consequence of the T-0041 spec amendment (§2) — the same *consequent-edit* category as the `test_errors.py` count above, not a defect correction. The module's own docstring states the tests exist to track the *real* `spec.json` on disk, not a frozen historical snapshot, so leaving the constants at the superseded value would have made the authorized amendment look like a bug rather than reflecting it. |
+
 ---
 
 ## 5. Open questions — need a human decision
+
+### `CLAUDE.md` §12.1 still names the superseded spec — needs an authorized edit
+
+T-0041 amended `spec.json` (§2: NFR-10, FR-12, the new hash `spec-97ee71`).
+`CLAUDE.md` §12.1's table still reads `spec-dd2914` and the old hash, and
+"10 out-of-scope boundaries" (now 11). `CLAUDE.md` is not in T-0041's writable
+scope (`pyproject.toml`, `.github/**`, `README.md`, `docs/**`), so this was
+found and reverted rather than fixed — see §2's T-0041 entry for the specific
+edit that was made and then backed out.
+
+The fix is mechanical (three values in one table row) and low-risk, but it
+touches the architectural contract, which this task was explicitly not
+authorized to edit. Needs an explicit go-ahead in a future session, or could
+reasonably be bundled into whatever session next touches `CLAUDE.md` for an
+unrelated reason.
+
+Same category, lower stakes: `redgear/hashing.py`'s module docstring
+illustrates the reference implementation with *"the recorded spec digest
+``sha256:dd2914...``"* — cosmetic (an example inside a comment, nothing reads
+or asserts it), but stale for the same reason, and `redgear/**` is likewise
+outside T-0041's scope. Worth folding into the same future edit.
+
+### `release.yml`'s GitHub/PyPI setup — still needs doing by hand
+
+The workflow itself is correct for PyPI trusted publishing: `id-token: write`
+on the `publish` job, no stored token anywhere, `pypa/gh-action-pypi-publish
+@release/v1`. **Neither side of the actual trust relationship exists yet**,
+and nothing in this repository can create either — both are configured on a
+website, by a human with the right account access:
+
+1. **On GitHub**: create an Environment named `release` on this repository
+   (Settings → Environments) — the workflow's `environment: release` refers
+   to it, and it does not exist until someone creates it. Environment
+   protection rules (required reviewers, restricted branches) are optional
+   but are exactly what an environment gate is for on a publish step.
+2. **On PyPI**: register `redgear` as a project (if not already claimed) and
+   add a **trusted publisher** for it (PyPI project → Settings → Publishing)
+   naming this exact repository, the `release.yml` workflow filename, and the
+   `release` environment. Trusted publishing has no token to generate or
+   store — the whole point is that the OIDC exchange at publish time replaces
+   one — but the publisher relationship itself has to be declared on PyPI's
+   side before the first publish can succeed.
+
+Until both exist, a GitHub Release publish event will reach the `publish` job
+and fail at the OIDC exchange, not silently succeed or silently no-op.
 
 ### The Claude Code adapter's real-CLI verification — RESOLVED, within a stated scope
 
@@ -1197,67 +1330,42 @@ either sample. Nobody has checked `Budget.per_turn_usd`'s default against this
 yet. Worth doing before trusting it as a real ceiling on an unattended run;
 not done this session, since it needs a cost model rather than a parsing fix.
 
-### ⚠️ The self-hosting crossover is not reached at T-0033, and the reason is a missed instruction
+### The self-hosting crossover — the decision is made (§2); the underlying gap is not closed
 
-§4.6 says "From `T-0033` onward redgear can drive its own remaining tasks."
-**It cannot.** Three things block it, verified rather than assumed:
+§4.6 said "From `T-0033` onward redgear can drive its own remaining tasks."
+It still cannot, and by T-0041 all three of the original blockers have a
+final status:
 
-**1. There is no event log.** `.redgear/` contains only `spec/` and
-`task_graph.json`. Every node in that projection still sits in its *initial*
-state — `T-0001` is `ready`, everything else `blocked`. So redgear pointed at
-its own repository today would select **T-0001 and try to bootstrap a
-repository that has been bootstrapped for 39 tasks**.
+1. **Still open, and it is the one that always mattered most: there is no
+   event log.** `.redgear/` contains `spec/` and `task_graph.json` only;
+   every node still sits in its pristine initial state (`T-0001` `ready`,
+   everything else `blocked`). redgear pointed at its own repository today
+   would select T-0001 and try to bootstrap a tree that has already been
+   bootstrapped for 40 done tasks.
+2. **RESOLVED at T-0034/35, and now more resolved than it was**: the adapter
+   is not just a concrete `Runner` — it has been checked against a real CLI
+   (claude 2.1.229, Windows, 2026-08-19; see the T-0038/39-era §2 entry).
+3. **RESOLVED at T-0036/37.** `redgear approve` and `POST /plan/approve` both
+   move the graph `draft → active` through `planner.approve_plan`, with a
+   real `plan_approved` event.
 
-This is the one that matters, and §4.6 warned about it in advance:
+**What T-0041 changed is not #1 itself — it is what the project says about
+#1.** The previous version of this entry framed "what to do about the missing
+event log" as an open decision with four unattractive options. It no longer
+is one: §2's "self-hosting claim" entry records the decision made this
+task — state the gap plainly in the README, fabricate nothing. That is a
+different question from "how do we make the crossover real," which is still
+genuinely unsolved and has exactly one honest answer: an approved plan and a
+real event log, built the way every other task in this graph was — no
+shortcut removes that. If that work happens, it happens as its own task, not
+as a retroactive fix to this file.
 
-> "Do not treat the manual phase as throwaway. Every task before T-0033 still
-> writes real events to `.redgear/events.jsonl` and still produces real
-> proofs. When the loop takes over it must find a coherent state directory,
-> not a fresh one."
-
-That instruction was not followed. All progress is recorded in this file
-instead. The consequence is now concrete rather than theoretical, and there is
-no cheap fix: back-filling 33 tasks' worth of `task_claimed` /
-`prompt_dispatched` / `turn_completed` / `task_verified` events would be
-*fabricating an audit trail*, which is precisely the thing the audit trail
-exists to make impossible. **This needs a human decision**, and the options are
-all unattractive:
-
-- **Fabricate the history.** Cheap, and it destroys the meaning of the log.
-- **Seed a `plan_approved` event and mark T-0001…T-0033 verified by hand**, in
-  one honest "imported from manual phase" record. Still a fiction, but a single
-  clearly-labelled one rather than 300 forged events.
-- **Start the log from here** and accept that the projection disagrees with
-  reality for the already-done tasks — meaning `rebuild` reports divergence
-  forever, or those nodes must be trimmed from the graph.
-- **Let redgear re-execute from T-0001.** Honest and absurd.
-
-**2. RESOLVED at T-0034/35.** `redgear/runner.py` now ships `ClaudeCodeRunner`
-alongside the protocol, and `cli.py`'s `run`/`plan` commands construct one.
-This blocker no longer applies — though see the adapter's own open item above:
-a *concrete* `Runner` existing is not the same claim as it having been run
-against a real CLI.
-
-**3. RESOLVED at T-0036/37.** `redgear approve --by <name>` (and, as of
-T-0038/39, `POST /plan/approve` on the API) now moves the graph `draft` →
-`active` and records the approver and `spec_hash` through
-`planner.approve_plan`, with a real `plan_approved` event — no more
-hand-editing the file to get past `E_PLAN_UNREVIEWED`.
-
-**So of the three original blockers, only #1 still stands** — self-hosting
-still cannot start today, and it is the one that always mattered most: there
-is no event log behind the 39 finished tasks, so redgear pointed at its own
-repository would still select T-0001 and try to bootstrap a repository that
-has already been bootstrapped for 39 tasks. The tooling gap is closed; the
-audit-trail gap is not, and nothing below has changed which of the four
-options resolves it.
-
-**What IS true now:** the full command surface exists and works end to end —
-`redgear plan`, `redgear approve`, `redgear run` (with a real adapter,
-untested against a live CLI), `redgear ui` — and every refusal on the path to
-a real self-hosted run fires correctly and in the right order except the one
-this section is about. The engine is complete; what is missing is a history
-to stand on, and confirmation the adapter works against something real.
+**What IS true now:** the full command surface exists, works end to end, and
+is verified against a real agent CLI — `redgear plan`, `redgear approve`,
+`redgear run`, `redgear ui`. Every refusal on the path to a real self-hosted
+run fires correctly and in the right order. The engine is complete and its
+one remaining unverified claim — "the loop can drive a real project
+unattended" — is stated as unverified, not implied otherwise.
 
 ### Suite runtime, and why the number here keeps moving
 
@@ -1290,23 +1398,6 @@ frozen. Same recommendation as before: **take the CI number as authoritative**
 rather than a Windows laptop's, and if it breaches there, the lever is a
 session-scoped repository fixture — which needs authorized edits to frozen
 files and should not be smuggled into an unrelated pair.
-
-### `spec.json` says Python 3.11; everything else says 3.12
-
-`NFR-10` states *"The tool targets Python 3.11 and above"* with acceptance
-criterion *"The package declares a minimum Python version of 3.11."*
-`pyproject.toml` declares `>=3.12`. **The spec and the build contradict each
-other right now.**
-
-- **Amend the spec.** Correct, and expensive: the hash moves off
-  `sha256:dd2914…`, every task's stored `spec_hash` mismatches, and §3.5 requires
-  every non-`verified` task move to `spec_drift` and be re-approved.
-- **Revert to 3.11.** Cheap, but restores a floor nothing tests, and CI would
-  have to actually run 3.11 for the claim to mean anything.
-- **Leave it.** Cheapest today; the contradiction stays live and someone will
-  hit it during release (T-0041), when packaging metadata gets scrutinised.
-
-No option is free. This wants a deliberate call, not a default.
 
 ### `state_engine.py` still carries a private git helper
 
