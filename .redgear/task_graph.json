@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+  "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
   "state": "draft",
   "generated_at": "2026-08-11T00:00:00Z",
   "nodes": [
@@ -14,7 +14,7 @@
         "NFR-9",
         "NFR-10"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [],
       "scope": {
         "writable_globs": [
@@ -102,7 +102,7 @@
         "FR-3",
         "NFR-5"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0001"
       ],
@@ -174,7 +174,7 @@
         "FR-3",
         "NFR-5"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0002"
       ],
@@ -212,7 +212,7 @@
         "FR-2",
         "NFR-5"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0003"
       ],
@@ -273,7 +273,7 @@
         "FR-2",
         "NFR-5"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0004"
       ],
@@ -312,7 +312,7 @@
         "FR-3",
         "NFR-7"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0005"
       ],
@@ -391,7 +391,7 @@
         "FR-3",
         "NFR-7"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0006"
       ],
@@ -428,7 +428,7 @@
       "spec_refs": [
         "NFR-1"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0001"
       ],
@@ -488,7 +488,7 @@
       "spec_refs": [
         "NFR-1"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0008"
       ],
@@ -526,7 +526,7 @@
         "FR-1",
         "NFR-7"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0007"
       ],
@@ -595,7 +595,7 @@
         "FR-1",
         "NFR-7"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0010"
       ],
@@ -633,7 +633,7 @@
         "FR-1",
         "FR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0011"
       ],
@@ -710,7 +710,7 @@
         "FR-1",
         "FR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0012"
       ],
@@ -749,7 +749,7 @@
         "FR-3",
         "NFR-7"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0013"
       ],
@@ -827,7 +827,7 @@
         "FR-3",
         "NFR-7"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0014"
       ],
@@ -865,7 +865,7 @@
         "FR-2",
         "NFR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0005"
       ],
@@ -934,7 +934,7 @@
         "FR-2",
         "NFR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0016"
       ],
@@ -971,7 +971,7 @@
       "spec_refs": [
         "NFR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0005"
       ],
@@ -1039,7 +1039,7 @@
       "spec_refs": [
         "NFR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0018"
       ],
@@ -1076,7 +1076,7 @@
       "spec_refs": [
         "FR-6"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0005"
       ],
@@ -1153,7 +1153,7 @@
       "spec_refs": [
         "FR-6"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0020"
       ],
@@ -1191,7 +1191,7 @@
         "FR-3",
         "FR-6"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0021",
         "T-0007"
@@ -1277,7 +1277,7 @@
         "FR-3",
         "FR-6"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0022"
       ],
@@ -1315,7 +1315,7 @@
         "FR-6",
         "NFR-4"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0023"
       ],
@@ -1417,7 +1417,7 @@
         "FR-6",
         "NFR-4"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0024"
       ],
@@ -1456,7 +1456,7 @@
         "NFR-6",
         "NFR-8"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0003"
       ],
@@ -1519,7 +1519,7 @@
         "NFR-6",
         "NFR-8"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0026"
       ],
@@ -1559,7 +1559,7 @@
         "FR-9",
         "NFR-3"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0003",
         "T-0009"
@@ -1664,7 +1664,7 @@
         "FR-9",
         "NFR-3"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0028"
       ],
@@ -1703,7 +1703,7 @@
         "FR-8",
         "NFR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0015",
         "T-0017",
@@ -1810,7 +1810,7 @@
         "FR-8",
         "NFR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0030"
       ],
@@ -1849,7 +1849,7 @@
         "FR-11",
         "NFR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0031"
       ],
@@ -1936,7 +1936,7 @@
         "FR-11",
         "NFR-2"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0032"
       ],
@@ -1975,7 +1975,7 @@
         "NFR-4",
         "NFR-8"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0027"
       ],
@@ -2078,7 +2078,7 @@
         "NFR-4",
         "NFR-8"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0034"
       ],
@@ -2115,7 +2115,7 @@
       "spec_refs": [
         "FR-10"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0035",
         "T-0033"
@@ -2200,7 +2200,7 @@
       "spec_refs": [
         "FR-10"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0036"
       ],
@@ -2237,7 +2237,7 @@
       "spec_refs": [
         "FR-12"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0015"
       ],
@@ -2313,7 +2313,7 @@
       "spec_refs": [
         "FR-12"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0038"
       ],
@@ -2350,7 +2350,7 @@
       "spec_refs": [
         "FR-12"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0039"
       ],
@@ -2401,7 +2401,7 @@
         "NFR-9",
         "NFR-10"
       ],
-      "spec_hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+      "spec_hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
       "depends_on": [
         "T-0037",
         "T-0040"

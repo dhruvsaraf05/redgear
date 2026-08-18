@@ -40,8 +40,17 @@ SPEC_PATH = REPO_ROOT / ".redgear" / "spec" / "spec.json"
 
 # The recorded, load-bearing values. If either of these changes, every task
 # in the graph has been invalidated (section 3.5 drift handling).
-REAL_SPEC_HASH = "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988"
-REAL_SPEC_ID = "spec-dd2914"
+#
+# Updated at T-0041: NFR-10 (Python floor) and FR-12 (deferred UI) both
+# changed, which moved the spec hash from spec-dd2914 to spec-97ee71 --
+# exactly the "recorded value changed" event section 3.5 defines, carried
+# out per its own mechanical steps (recompute, supersede, mark task_graph.json
+# with the new hash). This file's own docstring says the point of these tests
+# is to track the *real* spec.json, not a frozen historical one, so updating
+# the constant to match is the test doing its job, not a frozen-file defect
+# edit -- see docs/PROGRESS.md for the full account.
+REAL_SPEC_HASH = "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6"
+REAL_SPEC_ID = "spec-97ee71"
 
 
 @pytest.fixture(scope="module")

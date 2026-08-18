@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
-  "spec_id": "spec-97ee71",
-  "hash": "sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6",
-  "created_at": "2026-08-19T00:00:00Z",
-  "supersedes": "spec-dd2914",
+  "spec_id": "spec-dd2914",
+  "hash": "sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988",
+  "created_at": "2026-08-11T00:00:00Z",
+  "supersedes": null,
   "project": {
     "name": "redgear",
     "root_globs": [
@@ -166,7 +166,7 @@
     {
       "id": "FR-12",
       "kind": "functional",
-      "statement": "A local read-only control plane renders the task graph, dispatched prompts, diffs, and verification proofs derived solely from the event log. The API half is implemented (T-0038/T-0039); the browser front end is deferred post-1.0.",
+      "statement": "A local read-only control plane renders the task graph, dispatched prompts, diffs, and verification proofs derived solely from the event log.",
       "rationale": "A reviewer must be able to see exactly what the orchestrator saw. A view that can display something the log does not support is not an audit trail.",
       "acceptance": [
         "Every displayed fact is derived from the event log or a projection rebuilt from it.",
@@ -294,10 +294,10 @@
     {
       "id": "NFR-10",
       "kind": "non_functional",
-      "statement": "The tool targets Python 3.12 and above and installs as an isolated command line application.",
-      "rationale": "Distribution as a single global command is the expected shape for a developer tool. 3.12 is a floor, not the development version -- local development on this project runs 3.14 and CI runs 3.12 deliberately, to keep the floor honest. Nothing in the codebase uses a 3.13+ feature, so raising the floor further would lock out users for no benefit.",
+      "statement": "The tool targets Python 3.11 and above and installs as an isolated command line application.",
+      "rationale": "Distribution as a single global command is the expected shape for a developer tool.",
       "acceptance": [
-        "The package declares a minimum Python version of 3.12.",
+        "The package declares a minimum Python version of 3.11.",
         "Isolated installation from a built artifact yields a working command on a clean machine.",
         "Packaging metadata is declared in the project file with no legacy setup script."
       ],
@@ -314,7 +314,6 @@
     "Sandboxing beyond subprocess isolation and tool permission allowlists",
     "Authentication, user accounts, or role-based access control",
     "Cost accounting presented as authoritative billing rather than estimate",
-    "Automatic recovery or repair of a divergent projection",
-    "Browser front end for the control plane (the read-only API is implemented; the UI is deferred)"
+    "Automatic recovery or repair of a divergent projection"
   ]
 }
