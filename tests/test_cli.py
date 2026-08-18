@@ -565,6 +565,93 @@ def test_doctor_reports_the_environment(planned_repo: Path) -> None:
     assert "agent" in lowered or "runner" in lowered or "claude" in lowered
 
 
+# ---------------------------------------------------------------------------
+# Configurable agent CLI executable.
+#
+# Diagnosed directly on this machine: a normal MSIX/Claude-Desktop install of
+# Claude Code is deliberately not on PATH (`where.exe claude` finds nothing),
+# and `ClaudeCodeConfig.executable` defaulted to the bare string "claude" with
+# no CLI flag or config.json wiring to override it -- so a pipx user with
+# Claude Desktop and nothing else could not run `redgear run` at all without
+# editing Python. §2.4's four adapter requirements include "constrain tool
+# permissions" and "return a machine-readable result", but say nothing about
+# *finding* the binary in the first place; this closes that gap.
+# ---------------------------------------------------------------------------
+
+
+def test_configured_executable_precedence(planned_repo: Path) -> None:
+    """flag > config.json's runner.executable > None (ClaudeCodeConfig's own
+    "claude" default applies)."""
+    assert cli._configured_executable(planned_repo, flag=None) is None
+    assert cli._configured_executable(planned_repo, flag="/opt/flag-wins") == "/opt/flag-wins"
+
+    (planned_repo / ".redgear" / "config.json").write_text(
+        json.dumps({"runner": {"executable": "/opt/from-config/claude.exe"}}),
+        encoding="utf-8",
+    )
+    assert cli._configured_executable(planned_repo, flag=None) == "/opt/from-config/claude.exe"
+    # The flag still wins even with a config.json present.
+    assert cli._configured_executable(planned_repo, flag="/opt/flag-wins") == "/opt/flag-wins"
+
+
+def test_configured_executable_tolerates_a_malformed_config(planned_repo: Path) -> None:
+    """A `doctor`/`run`/`plan` invocation must not crash because `config.json`
+    is absent, empty, not an object, or missing the `runner` section -- these
+    are all states a user can easily be in before ever setting the key."""
+    config = planned_repo / ".redgear" / "config.json"
+
+    config.write_text("not json", encoding="utf-8")
+    assert cli._configured_executable(planned_repo, flag=None) is None
+
+    config.write_text("[]", encoding="utf-8")
+    assert cli._configured_executable(planned_repo, flag=None) is None
+
+    config.write_text(json.dumps({"other_section": {}}), encoding="utf-8")
+    assert cli._configured_executable(planned_repo, flag=None) is None
+
+    config.write_text(json.dumps({"runner": {}}), encoding="utf-8")
+    assert cli._configured_executable(planned_repo, flag=None) is None
+
+    config.write_text(json.dumps({"runner": {"executable": "  "}}), encoding="utf-8")
+    assert cli._configured_executable(planned_repo, flag=None) is None
+
+
+def test_doctor_reports_the_configured_executable_not_a_bare_claude(
+    planned_repo: Path,
+) -> None:
+    """The failure mode this closes: `doctor` reporting `shutil.which("claude")`
+    unconditionally would say "not on PATH" even when a real, configured
+    binary exists and works -- exactly the state on a machine with only a
+    Claude Desktop install. `doctor` must resolve the same way `run`/`plan`
+    do and name what it actually checked."""
+    # Short and configured directly, not a real file under the temp fixture
+    # root: rich's `Table` renders `CliRunner` output at 79 columns and wraps
+    # long, unbroken strings (a Windows path has no spaces to break on) --
+    # observed directly, a full absolute temp path here truncates to
+    # "...\\f…" before "fake-claude.exe" is ever reached, and a substring
+    # check against it would prove nothing (the same trap
+    # test_log_redacts_a_credential_named_field works around, above). This
+    # test is about the row *label* doctor chooses, which does not depend on
+    # the configured path resolving to a real, runnable binary.
+    (planned_repo / ".redgear" / "config.json").write_text(
+        json.dumps({"runner": {"executable": "x-configured-claude"}}),
+        encoding="utf-8",
+    )
+
+    result = _invoke("doctor", "--repo", str(planned_repo))
+    assert "x-configured-claude" in result.output, "doctor did not report the configured executable"
+    assert "agent CLI (claude)" not in result.output, (
+        "doctor still names the bare, unconfigured claude rather than the resolved binary"
+    )
+
+
+def test_run_and_plan_accept_an_executable_flag() -> None:
+    """The flag exists on both commands `--executable` was promised for."""
+    for command in ("run", "plan"):
+        help_text = _invoke(command, "--help").output
+        assert "--executable" in help_text, f"{command} --help does not mention --executable"
+
+
 def test_verify_reports_a_verdict_for_a_task(planned_repo: Path) -> None:
     """§9: "Run the harness manually against a claimed task. Harness
     debugging." Exit 0 or 1 on the verdict, never a traceback."""

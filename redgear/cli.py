@@ -28,6 +28,7 @@ whether their repository is now inconsistent.
 from __future__ import annotations
 
 import importlib.util
+import json
 import os
 import shutil
 import sys
@@ -44,7 +45,7 @@ from redgear.api.app import create_app
 from redgear.budget import request_stop
 from redgear.errors import JsonValue, PlanUnreviewedError, RedgearError
 from redgear.events import replay as replay_events
-from redgear.paths import events_path, redgear_dir, stop_path, task_graph_path
+from redgear.paths import config_path, events_path, redgear_dir, stop_path, task_graph_path
 from redgear.redact import collect_secrets, redact_value
 from redgear.runner import ClaudeCodeConfig, ClaudeCodeRunner
 from redgear.schemas import Budget, Claim, HarnessConfig, TaskGraph, Verdict
@@ -126,6 +127,42 @@ def _default_harness() -> HarnessConfig:
     )
 
 
+def _configured_executable(root: Path, *, flag: str | None) -> str | None:
+    """Resolve the agent CLI binary: ``--executable``, then ``config.json``'s
+    ``runner.executable``, then ``None`` -- meaning ``ClaudeCodeConfig``'s own
+    ``"claude"`` default applies.
+
+    A bare ``"claude"`` only resolves on PATH, and a normal MSIX/Desktop
+    install of Claude Code deliberately is not on PATH (confirmed by direct
+    diagnostic on this machine: ``where.exe claude`` finds nothing, while
+    ``CLAUDE_CODE_EXECPATH`` in the environment names the real binary). Before
+    this, a pipx user with Claude Desktop and nothing else could not run
+    ``redgear run`` at all without editing Python.
+
+    Returns ``None`` rather than the literal default so callers can tell "use
+    the config" from "nothing configured, fall through to ``ClaudeCodeConfig``'s
+    own default" -- the two need to behave identically, but only one of them
+    should ever be reported as "configured" by ``doctor``.
+    """
+    if flag is not None:
+        return flag
+
+    config_file = config_path(root)
+    if not config_file.is_file():
+        return None
+    try:
+        data = json.loads(config_file.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict):
+        return None
+    runner_section = data.get("runner")
+    if not isinstance(runner_section, dict):
+        return None
+    executable = runner_section.get("executable")
+    return executable if isinstance(executable, str) and executable.strip() else None
+
+
 # ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------
@@ -165,6 +202,14 @@ def run(
     task: Annotated[
         str | None, typer.Option("--task", help="Restrict the dry run to one task id.")
     ] = None,
+    executable: Annotated[
+        str | None,
+        typer.Option(
+            "--executable",
+            help="Path to the agent CLI binary. Defaults to config.json's "
+            'runner.executable, then "claude" resolved on PATH.',
+        ),
+    ] = None,
 ) -> None:
     """Run the continuous loop until a terminal condition is reached."""
     root = repo or _repo_default()
@@ -199,11 +244,17 @@ def run(
 
     # The adapter writes its per-turn artifacts under the run directory the
     # state engine owns (§2.3's `agent_stdout.log`, `argv.json`).
+    resolved_executable = _configured_executable(root, flag=executable)
+    config = (
+        ClaudeCodeConfig(executable=resolved_executable)
+        if resolved_executable is not None
+        else ClaudeCodeConfig()
+    )
     agent = ClaudeCodeRunner(
-        config=ClaudeCodeConfig(),
+        config=config,
         artifacts_root=redgear_dir(root) / "runs" / "agent",
     )
-    console.print(f"  agent CLI: [dim]{agent.version()}[/dim]")
+    console.print(f"  agent CLI: [dim]{config.executable}[/dim] — {agent.version()}")
     console.print()
 
     try:
@@ -260,6 +311,14 @@ def _dry_run(root: Path, *, only: str | None) -> None:
 def plan_command(
     source: Annotated[Path, typer.Option("--from", help="Requirements document to plan from.")],
     repo: RepoOption = None,
+    executable: Annotated[
+        str | None,
+        typer.Option(
+            "--executable",
+            help="Path to the agent CLI binary. Defaults to config.json's "
+            'runner.executable, then "claude" resolved on PATH.',
+        ),
+    ] = None,
 ) -> None:
     """Generate a plan from a requirements document. Leaves it in `draft`."""
     root = repo or _repo_default()
@@ -270,8 +329,14 @@ def plan_command(
             RedgearError(f"no such document: {source}", detail={"path": str(source)})
         ) from None
 
+    resolved_executable = _configured_executable(root, flag=executable)
+    config = (
+        ClaudeCodeConfig(executable=resolved_executable)
+        if resolved_executable is not None
+        else ClaudeCodeConfig()
+    )
     agent = ClaudeCodeRunner(
-        config=ClaudeCodeConfig(),
+        config=config,
         artifacts_root=redgear_dir(root) / "runs" / "planner",
     )
     console.print("[bold]redgear plan[/bold]")
@@ -536,8 +601,29 @@ def doctor(repo: RepoOption = None) -> None:
 
     # Agent CLI. Absent is not fatal -- `--dry-run` works without one -- but
     # it is the single most useful thing to know when a run does nothing.
-    claude = shutil.which("claude")
-    table.add_row("agent CLI (claude)", claude or "[yellow]not on PATH[/yellow]")
+    # Resolved the same way `run`/`plan` resolve it: config.json's
+    # `runner.executable`, falling back to the bare "claude" `ClaudeCodeConfig`
+    # defaults to. A normal MSIX/Desktop install is deliberately not on PATH,
+    # so reporting only `shutil.which("claude")` here would say "not on PATH"
+    # on a machine where the CLI is installed and configured correctly.
+    resolved_executable = _configured_executable(root, flag=None) or "claude"
+    probe_runner = ClaudeCodeRunner(
+        config=ClaudeCodeConfig(executable=resolved_executable),
+        artifacts_root=redgear_dir(root) / "runs" / "agent",
+    )
+    # Not folded into `healthy`: a missing agent CLI does not make the
+    # environment unhealthy, the same way it was not before this resolved a
+    # configured path instead of a bare "claude" -- `--dry-run` works with no
+    # agent CLI at all, and reporting it as a health failure would make
+    # `doctor` exit non-zero for a perfectly legitimate `--dry-run`-only setup.
+    resolved_path = shutil.which(resolved_executable)
+    if resolved_path or Path(resolved_executable).is_file():
+        table.add_row(f"agent CLI ({resolved_executable})", probe_runner.version())
+    else:
+        table.add_row(
+            f"agent CLI ({resolved_executable})",
+            "[yellow]not found -- not on PATH and not an existing file[/yellow]",
+        )
 
     harness = _default_harness()
     for label, cmd in (
