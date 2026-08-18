@@ -7,9 +7,11 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0039 (`api/app.py` — read-only control plane). Every
-module in §2.2 exists except the Next.js UI. **The adapter is still
-unverified against a real CLI** — see §5.*
+*Last updated: after manual verification of the Claude Code adapter against a
+real CLI (claude 2.1.229, Windows, 2026-08-19) and the resulting reconciliation
+— see §2. Every module in §2.2 exists except the Next.js UI. **The adapter is
+now verified**, within the scope of what three real dispatches can prove; see
+§2 and §5 for what that scope does and does not cover.*
 
 ---
 
@@ -21,17 +23,26 @@ generates a plan read-only, `redgear approve` gates it behind a named human,
 control plane over the event log. Next up is **`T-0040`** — the Next.js web
 UI (the API it talks to already exists; see the T-0038/39 entry below).
 
-⚠️ **Two things are true at once and both matter.** The adapter is written and
-fully tested against recorded payloads, but those payloads are **synthetic**
-and it has **never been run against a real CLI** — no `claude` was on PATH.
-And the self-hosting blockers from T-0033 are unchanged: no approved plan, and
-no event log behind the 39 finished tasks. See §5.
+**The Claude Code adapter has now been checked against a real CLI** — a status
+that held since T-0035 through T-0039 and is the single biggest change this
+entry records. `build_argv` needed no change at all; every flag it sends
+already matched what the real CLI accepted. Parsing did: `subtype` and
+`stop_reason` are confirmed unread (correctly — real payloads prove both are
+unreliable), `structured_output` is confirmed read directly, and
+`permission_denials` is confirmed unsurfaced (an open question, not a bug —
+see §5). Separately, a real defect in the CLI surface was found and fixed:
+`ClaudeCodeConfig.executable` had no way to be set from the command line, and
+a normal Windows install of Claude Code is not on PATH — `--executable` and
+`config.json → runner.executable` close that. See §2 for the full account.
+
+The self-hosting blockers from T-0033 are otherwise unchanged: no approved
+plan, and no event log behind the 39 finished tasks. See §5.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **393 passed, 1 skipped** (was 380) |
-| Suite runtime | **Unreliable on this machine — measured 83 s to 271 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
+| Test suite | **402 passed, 1 skipped** (was 393) |
+| Suite runtime | **Unreliable on this machine — measured 83 s to 463 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
 | Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter**), `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/app.py` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
@@ -68,7 +79,7 @@ That default is a footgun and is written up in §2.
 | T-0028/29 | test/impl | done | `prompt_engine.py` — 5 golden snapshots committed |
 | T-0030/31 | test/impl | done | `orchestrator.py` — the continuous loop |
 | T-0032/33 | test/impl | done | `cli.py` — init, run, status, stop, verify, rebuild, log, doctor |
-| T-0034/35 | test/impl | done* | Claude Code adapter. *never run against a real CLI, §5 |
+| T-0034/35 | test/impl | done | Claude Code adapter. Verified against a real CLI (2.1.229, Windows, 2026-08-19) — see §2 |
 | T-0036/37 | test/impl | done | `planner.py` — plan generation + approval gate |
 | T-0038/39 | test/impl | done | `api/app.py` — read-only control plane. Also added `state_engine.persist_proof` and wired it into `orchestrator.run` (§2), and the API half of `redgear ui` (§9) |
 | **T-0040** | scaf | **next** | control plane UI (Next.js) — the API it talks to already exists |
@@ -541,6 +552,106 @@ Two changes landed by explicit human instruction rather than as findings:
   *is* the decision record for this project, and `CLAUDE.md` §11.3 now points
   here instead of at `docs/adr/`. See the ADR itself for the full reasoning
   and what is lost by not using per-decision files.
+
+### The Claude Code adapter's manual verification — what was run, what it found, what changed
+
+Not a graph task — maintenance on already-verified modules (T-0034/35,
+T-0032/33), so the two-phase protocol does not apply. Existing frozen tests
+were treated as frozen throughout: none needed editing, because none
+contradicted the real payloads (recorded explicitly, since it was checked
+rather than assumed).
+
+**What was run.** `docs/agents/claude-code.md`'s procedure, against
+**claude 2.1.229, Windows, MSIX/Claude-Desktop install, 2026-08-19**. Three
+dispatches against a throwaway repo, `--output-format json` stdout captured
+verbatim: an unauthenticated failure (exit 1), a plain success with no
+`--json-schema` (exit 0), and a success *with* `--json-schema` (exit 0). Full
+account, including the exact payloads: `tests/fixtures/claude_payloads/
+README.md`.
+
+**What it found — five things, all about parsing, none about `build_argv`:**
+
+1. **`subtype` reads `"success"` even on the hard authentication failure.**
+   Useless as a signal. The adapter never read it — checked by re-reading the
+   source, not re-asserted from memory — and `CLAUDE.md` §6.4 now names
+   `is_error`/`terminal_reason` as the real discriminators explicitly (rule 7).
+2. **Exit code and payload agreed in both samples that had one to check
+   against.** §6.4 rule 1's wording read as though disagreement were the
+   norm; softened to say they can disagree in either direction and the
+   payload is authoritative regardless — the adapter's actual behaviour
+   (record the exit code, never branch on it) needed no change.
+3. **`structured_output` is a real, separate JSON object; `result` carries
+   the same content JSON-encoded as a string.** The adapter already read
+   `structured_output` directly and never fell back to `result` — confirmed,
+   not changed. The real `--json-schema` capture used a minimal test schema,
+   not redgear's own `agent_report_schema()`, so its content does not
+   validate against `AgentTurnReport` — expected, and documented as such
+   rather than treated as a mismatch to paper over.
+4. **`stop_reason: "tool_use"` appeared on a completely ordinary successful,
+   multi-turn dispatch.** Every real dispatch uses tools; nothing reads
+   `stop_reason`, confirmed, and §6.4 rule 8 now says so explicitly.
+5. **`permission_denials` was empty in all three samples** (none of the three
+   manual dispatches attempted a disallowed tool) **and `TurnResult` has no
+   field for one.** Not fixed — see §5. A regression test
+   (`test_permission_denials_are_observed_but_not_yet_surfaced`) pins down
+   the current, honest state so a future change here is deliberate.
+
+**What changed because of it:**
+
+- `tests/fixtures/claude_payloads/`: the three real payloads added verbatim
+  (`real_unauthenticated_failure.json`, `real_plain_success.json`,
+  `real_json_schema_dispatch.json`); `error_zero_exit.json` and
+  `no_structured_output.json` now **are** two of those three, copied in
+  unmodified, because they already stood in for exactly those roles;
+  `completed.json`/`blocked.json` got a real, observed *envelope* (`stop_reason`,
+  `permission_denials`, `usage`, `modelUsage`, etc.) around their existing,
+  necessarily-illustrative `structured_output` — no real capture demonstrates
+  a redgear-schema-conformant result, so the fixtures say so rather than
+  pretending otherwise. Every value an existing test asserts exactly
+  (`num_turns`, `duration_ms`, `total_cost_usd`, `changed_files`,
+  `session_id`) is unchanged, so no existing test's meaning shifted.
+- Five new tests in `tests/test_claude_adapter.py`, each pinning one finding
+  above against the real fixture content rather than against a synthetic
+  stand-in.
+- `redgear/runner.py`'s `# Verified against:` comment now names the version,
+  date, platform, install method, and — explicitly — what was *not*
+  exercised (`--bare`, `--mcp-config`, `--max-spend-usd`).
+- `CLAUDE.md` §6.2 gained the observed-field list and the executable
+  resolution note (below); §6.4 gained rules 7 and 8 and rule 1's softened
+  wording.
+- `docs/agents/claude-code.md`: §0 records what was actually found instead of
+  predicting a changed flag; §1 explains the MSIX-not-on-PATH gap;
+  §6 documents that PowerShell mangles a `--json-schema` argument's quoting
+  and `cmd /c` or `subprocess.run(..., shell=False)` must be used instead
+  when invoking `claude` directly (not a redgear issue — its own subprocess
+  calls are immune, §11.1 rule 1); §7's template reflects what "verified"
+  now actually names.
+
+### The configurable executable — a second, independent defect, fixed in the same session
+
+`ClaudeCodeConfig.executable` defaulted to the bare string `"claude"` and
+`cli.py`'s two call sites (`run`, `plan`) never overrode it — confirmed by a
+direct diagnostic in the previous session (`where.exe claude` finds nothing on
+this machine; `CLAUDE_CODE_EXECPATH` in the environment names the real binary,
+under `%LOCALAPPDATA%\Packages\<PackageFamilyName>\LocalCache\Roaming\Claude\
+claude-code\<version>\claude.exe` — a normal MSIX/Claude-Desktop install,
+deliberately not on PATH). A pipx user with Claude Desktop and nothing else
+could not run `redgear run` at all without editing Python.
+
+Fixed with the precedence the diagnostic recommended: `--executable` flag on
+`run` and `plan`, then `config.json → runner.executable` (the first real
+reader `config.json` has ever had in this codebase — nothing previously
+parsed it at all, despite `paths.config_path` and several docstrings assuming
+it existed), then `ClaudeCodeConfig`'s own `"claude"` default. `redgear doctor`
+now resolves and reports whichever one is actually configured, rather than
+unconditionally reporting `shutil.which("claude")` — the old behaviour would
+say "not on PATH" on a machine where the CLI is installed and correctly
+configured, which is exactly the state this fix exists for.
+
+Four new tests in `tests/test_cli.py` cover precedence, a malformed or absent
+`config.json` (must not crash — a user setting this up for the first time will
+pass through every one of those states), and `doctor` naming the resolved
+executable rather than a hardcoded `claude`.
 
 ---
 
@@ -1034,31 +1145,57 @@ frozen-file edit.
 
 ## 5. Open questions — need a human decision
 
-### ⚠️ The Claude Code adapter has never touched a real CLI
+### The Claude Code adapter's real-CLI verification — RESOLVED, within a stated scope
 
-Milestone 10's code is written, typed, and covered by 24 tests. **None of that
-is evidence that it works**, and the distinction is worth being blunt about:
+Was an open question through T-0039; resolved by the manual verification
+session recorded in §2 above (claude 2.1.229, Windows, 2026-08-19). §12's
+prediction held — *"Milestone 10 is an adapter, and adapter bugs are
+integration bugs"* — and every one found was in parsing, not in `build_argv`.
 
-- No `claude` was on PATH when T-0035 was written — checked with `which`, not
-  assumed.
-- Every payload in `tests/fixtures/claude_payloads/` is **synthetic**,
-  constructed from §6.2's documented shape. Their README says so.
-- So the tests prove the adapter is correct **against the contract**. They say
-  nothing about any installed release.
+**What "resolved" does and does not mean here**, so a future reader does not
+read more into it than three dispatches can support:
 
-§12 anticipated exactly this: *"Milestone 10 is an adapter, and adapter bugs
-are integration bugs — they should be the only thing left to debug."* They
-still are. The procedure is `docs/agents/claude-code.md`, and its §0 tells the
-first runner to expect at least one flag to differ.
+- Verified: an unauthenticated failure, a plain success with no
+  `--json-schema`, a success *with* `--json-schema`. All three exit-code /
+  `is_error` combinations that matter, and the `structured_output` mechanism.
+- **Not verified this session:** `--bare`, `--mcp-config`, `--max-spend-usd`,
+  a `blocked`/`scope_insufficient` outcome from a real agent, or any
+  redgear-schema-conformant `structured_output` from a real dispatch (the
+  manual test used a minimal test schema, not `agent_report_schema()`) — see
+  the two open items below for the two of these that matter most in practice.
+- **Not verified on any platform other than Windows**, and not against any
+  install method other than the MSIX/Claude-Desktop one.
 
-The `# Verified against:` comment at the top of the adapter section says
-`NOT VERIFIED AGAINST A REAL CLI` rather than naming a version. §2.4 wants a
-version there; writing one nobody checked would be worse than the admission,
-because the next person would trust it.
+Two smaller items fell out of this that are still open:
 
-**What a human needs to do:** run `docs/agents/claude-code.md` once, replace
-the synthetic fixtures with a captured payload, and update the comment. If the
-suite then fails, the adapter was wrong and the procedure worked.
+#### `permission_denials` — surface it, or leave it invisible?
+
+All three real captures had `permission_denials: []`. `TurnResult` has no
+field for one. If a real dispatch ever attempts a disallowed tool, the
+orchestrator currently cannot know — it is silent information loss, not a
+crash or a wrong verdict, but it means a class of `--allowedTools` violation
+that G6/§8.2 cares about a great deal is not visible anywhere in the event
+log.
+
+Adding it would mean: a new `TurnResult`/`AgentTurnReport`-adjacent field (it
+is runner-populated, not agent-supplied, so it belongs with `exit_code` and
+`session_id`, not with `outcome`/`summary`), and a decision about whether it
+should ever affect a gate verdict (G1 says no field an adapter populates may
+influence a gate — a denial is redgear's own observation of the *agent's*
+constrained behaviour, arguably different in kind from the agent's self-report,
+but this wants a deliberate reading of G1 before landing, not an assumption).
+Not done this session — no real sample to test against, and it touches
+`schemas.py`, which is genuinely out of scope for an adapter-parsing fix.
+
+#### `Budget.per_turn_usd`'s default, against real cost data
+
+Real costs observed: $0.065 for a near-empty 2-token prompt (cache-creation
+dominated), $0.218 for a 4-turn dispatch reading one 10-byte file. A real
+redgear dispatch carries up to an 8,000-character prompt (§5.6's cap) and
+plausibly several turns of tool use — almost certainly more expensive than
+either sample. Nobody has checked `Budget.per_turn_usd`'s default against this
+yet. Worth doing before trusting it as a real ceiling on an unattended run;
+not done this session, since it needs a cost model rather than a parsing fix.
 
 ### ⚠️ The self-hosting crossover is not reached at T-0033, and the reason is a missed instruction
 

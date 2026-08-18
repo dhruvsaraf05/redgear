@@ -52,7 +52,7 @@ from redgear.runner import (
     allowed_tools_for,
     bash_rule,
 )
-from redgear.schemas import TaskNode, TurnOutcome
+from redgear.schemas import TaskNode, TurnOutcome, TurnResult
 
 PAYLOADS = Path(__file__).parent / "fixtures" / "claude_payloads"
 
@@ -424,6 +424,139 @@ def test_changed_files_are_recorded_as_a_claim(
     assert result.session_id
     assert result.num_turns == 7
     assert result.cost_usd_estimate == pytest.approx(0.0412)
+
+
+# ---------------------------------------------------------------------------
+# Manual verification findings (real Claude Code 2.1.229, Windows, 2026-08-19).
+# See tests/fixtures/claude_payloads/README.md for the full account and the
+# three verbatim captures these tests are pinned against.
+# ---------------------------------------------------------------------------
+
+
+def test_subtype_is_never_a_success_signal(
+    artifacts: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``real_unauthenticated_failure.json`` (== ``error_zero_exit.json``) has
+    ``"subtype": "success"`` despite being a hard authentication failure --
+    observed in all three real captures, including this one. ``subtype`` is
+    useless as a discriminator; ``is_error`` is the real one, and it is what
+    ``_parse`` already branches on.
+
+    Two things are asserted: the adapter genuinely treats this payload as a
+    failure (behavioural proof), and the module's source never references
+    ``subtype`` at all (structural proof it cannot have been fooled by it --
+    the same pattern ``test_the_module_never_reads_an_auth_variable`` uses).
+    """
+    raw = json.loads(_payload("error_zero_exit"))
+    assert raw["subtype"] == "success", "fixture drifted from the real capture it stands in for"
+    assert raw["is_error"] is True
+
+    _install(monkeypatch, SpawnSpy(FakeProcess(_payload("error_zero_exit"), returncode=0)))
+    with pytest.raises(RunnerError):
+        _runner(artifacts).dispatch("prompt", ["Read"], repo, 900, 25)
+
+    import redgear.runner as module
+
+    source = Path(str(module.__file__)).read_text(encoding="utf-8")
+    assert "subtype" not in source, (
+        "the adapter now reads subtype, which real payloads prove is not a reliable signal "
+        '-- it reads "success" even on a hard failure'
+    )
+
+
+def test_structured_output_is_a_real_object_distinct_from_result_string(artifacts: Path) -> None:
+    """``real_json_schema_dispatch.json``: ``structured_output`` is a JSON
+    object; ``result`` carries the *same content* JSON-encoded as a string.
+    The adapter has always read ``structured_output`` directly and never
+    fallen back to parsing ``result`` -- this pins that down against the real
+    shape rather than only against the synthetic one.
+
+    This capture used a minimal test schema (``{"outcome": {"type":
+    "string"}}``), not redgear's own ``agent_report_schema()``, so its
+    ``structured_output.outcome`` is free text and will not validate against
+    ``AgentTurnReport``. That is expected -- it is checked at the raw JSON
+    level here rather than routed through ``ClaudeCodeRunner._parse``, which
+    correctly rejects it (see the next test).
+    """
+    raw = json.loads(_payload("real_json_schema_dispatch"))
+
+    assert isinstance(raw["structured_output"], dict)
+    assert isinstance(raw["result"], str)
+    # Same content, two shapes: result is structured_output JSON-encoded.
+    assert json.loads(raw["result"]) == raw["structured_output"]
+
+    import redgear.runner as module
+
+    source = Path(str(module.__file__)).read_text(encoding="utf-8")
+    assert '"result"' not in source and 'get("result")' not in source, (
+        "the adapter reads payload['result'] somewhere; G1's outcome contract is meant to "
+        "come from structured_output only"
+    )
+
+
+def test_a_real_json_schema_payload_not_matching_our_schema_fails_to_parse(
+    artifacts: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The other half of the previous test: a real, well-formed
+    ``structured_output`` that does not conform to redgear's own
+    ``AgentTurnReport`` schema is correctly treated as unparseable, not
+    smuggled through. Proves the adapter validates the *shape* redgear needs,
+    not merely that some object is present."""
+    _install(
+        monkeypatch,
+        SpawnSpy(FakeProcess(_payload("real_json_schema_dispatch"), returncode=0)),
+    )
+    with pytest.raises(RunnerError):
+        _runner(artifacts).dispatch("prompt", ["Read"], repo, 900, 25)
+
+
+def test_stop_reason_tool_use_does_not_cause_failure(
+    artifacts: Path, repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """``real_json_schema_dispatch.json`` showed a normal, successful,
+    4-turn dispatch stopping with ``stop_reason: "tool_use"`` (the agent read
+    a file before answering) -- every real dispatch that uses a tool will
+    look like this. ``completed.json`` now carries that same observed
+    ``stop_reason`` so the fact stays true under test rather than only under
+    one-off inspection: any logic treating ``stop_reason != "end_turn"`` as
+    failure would reject every real dispatch.
+    """
+    raw = json.loads(_payload("completed"))
+    assert raw["stop_reason"] == "tool_use"
+    assert raw["num_turns"] > 1
+
+    _install(monkeypatch, SpawnSpy(FakeProcess(_payload("completed"))))
+    result = _runner(artifacts).dispatch("prompt", ["Read"], repo, 900, 25)
+
+    assert result.outcome is TurnOutcome.COMPLETED
+    assert result.parse_ok is True
+
+    import redgear.runner as module
+
+    source = Path(str(module.__file__)).read_text(encoding="utf-8")
+    assert "stop_reason" not in source, (
+        "the adapter now branches on stop_reason; real payloads prove tool_use is normal "
+        "on a successful dispatch"
+    )
+
+
+def test_permission_denials_are_observed_but_not_yet_surfaced() -> None:
+    """All three real captures carry ``permission_denials: []`` -- empty in
+    every sample, because none of the three manual dispatches attempted a
+    disallowed tool. This does not prove the field is never populated; it
+    proves the adapter has never had a non-empty sample to react to.
+
+    Documented rather than fixed: ``TurnResult`` has no field for a denial
+    today, so one occurring is currently invisible to the orchestrator. See
+    ``docs/PROGRESS.md`` §5 for the open question of whether that should
+    change -- this test only pins down the current, honest state of affairs
+    so a future change here is a deliberate edit, not a silent one.
+    """
+    for name in ("real_unauthenticated_failure", "real_plain_success", "real_json_schema_dispatch"):
+        raw = json.loads(_payload(name))
+        assert raw["permission_denials"] == []
+
+    assert "permission_denials" not in TurnResult.model_fields
 
 
 # ---------------------------------------------------------------------------

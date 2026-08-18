@@ -191,18 +191,22 @@ def allowed_tools_for(task: TaskNode) -> list[str]:
 # ---------------------------------------------------------------------------
 # The Claude Code adapter (T-0035)
 #
-# Verified against: NOT VERIFIED AGAINST A REAL CLI.
-#   No `claude` executable was on PATH when this was written -- checked, not
-#   assumed -- so every flag below comes from CLAUDE.md section 6.2, and every
-#   payload fixture under tests/fixtures/claude_payloads/ is synthetic.
+# Verified against: claude 2.1.229 on 2026-08-19 (Windows, MSIX/Claude-Desktop
+#   install, OAuth via the desktop app, bare=false).
 #
-#   Section 2.4 requires a `# Verified against <cli> <version> on <date>` line
-#   here. Writing a version nobody checked would be worse than admitting the
-#   gap, so this says what is actually true. Replace it with a real version and
-#   date the first time someone completes the manual procedure in
-#   docs/agents/claude-code.md, and correct any flag the CLI disagrees with --
-#   section 2.4 is explicit that where this file and the installed CLI differ,
-#   the CLI is right.
+#   docs/agents/claude-code.md's manual procedure was run against a real,
+#   authenticated CLI: three dispatches, real --output-format json stdout
+#   captured verbatim under tests/fixtures/claude_payloads/ (see that
+#   directory's README for the full account). This verifies the three shapes
+#   actually exercised -- an unauthenticated failure, a plain success with no
+#   --json-schema, and a success with --json-schema proving structured_output
+#   is a real, separate object from result -- not the CLI's full flag surface.
+#   --bare, --mcp-config and --max-spend-usd were not exercised this session.
+#
+#   Nothing in build_argv needed to change: every flag already matched what
+#   the real CLI accepted. What changed was parsing-adjacent understanding,
+#   not the argv shape -- see the fixtures README and CLAUDE.md section 6.2's
+#   observed-field list.
 # ---------------------------------------------------------------------------
 
 

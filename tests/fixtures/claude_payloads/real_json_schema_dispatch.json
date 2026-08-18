@@ -1,17 +1,17 @@
 {
   "is_error": false,
-  "duration_api_ms": 2730,
-  "num_turns": 1,
-  "stop_reason": "end_turn",
-  "session_id": "526f8074-367f-40f7-a641-3e49396a8b24",
-  "total_cost_usd": 0.0654718,
+  "duration_api_ms": 7424,
+  "num_turns": 4,
+  "stop_reason": "tool_use",
+  "session_id": "311fcc53-68e9-48da-8826-4468ce000ed3",
+  "total_cost_usd": 0.2180708,
   "usage": {
-    "input_tokens": 2,
-    "cache_creation_input_tokens": 9716,
-    "cache_read_input_tokens": 21756,
-    "output_tokens": 4,
+    "input_tokens": 6,
+    "cache_creation_input_tokens": 32376,
+    "cache_read_input_tokens": 62856,
+    "output_tokens": 289,
     "output_tokens_details": {
-      "thinking_tokens": 0
+      "thinking_tokens": 25
     },
     "server_tool_use": {
       "web_search_requests": 0,
@@ -19,19 +19,19 @@
     },
     "service_tier": "standard",
     "cache_creation": {
-      "ephemeral_1h_input_tokens": 9716,
+      "ephemeral_1h_input_tokens": 32376,
       "ephemeral_5m_input_tokens": 0
     },
     "inference_geo": "not_available",
     "iterations": [
       {
         "input_tokens": 2,
-        "output_tokens": 4,
-        "cache_read_input_tokens": 21756,
-        "cache_creation_input_tokens": 9716,
+        "output_tokens": 132,
+        "cache_read_input_tokens": 32280,
+        "cache_creation_input_tokens": 96,
         "cache_creation": {
           "ephemeral_5m_input_tokens": 0,
-          "ephemeral_1h_input_tokens": 9716
+          "ephemeral_1h_input_tokens": 96
         },
         "type": "message"
       }
@@ -40,24 +40,24 @@
   },
   "modelUsage": {
     "claude-haiku-4-5-20251001": {
-      "inputTokens": 523,
-      "outputTokens": 12,
+      "inputTokens": 525,
+      "outputTokens": 16,
       "cacheReadInputTokens": 0,
       "cacheCreationInputTokens": 0,
       "webSearchRequests": 0,
-      "costUSD": 0.0005830000000000001,
+      "costUSD": 0.000605,
       "contextWindow": 200000,
       "maxOutputTokens": 32000,
       "canonicalModel": "claude-haiku-4-5",
       "provider": "firstParty"
     },
     "claude-sonnet-5": {
-      "inputTokens": 2,
-      "outputTokens": 4,
-      "cacheReadInputTokens": 21756,
-      "cacheCreationInputTokens": 9716,
+      "inputTokens": 6,
+      "outputTokens": 289,
+      "cacheReadInputTokens": 62856,
+      "cacheCreationInputTokens": 32376,
       "webSearchRequests": 0,
-      "costUSD": 0.0648888,
+      "costUSD": 0.21746580000000001,
       "contextWindow": 1000000,
       "maxOutputTokens": 64000,
       "canonicalModel": "claude-sonnet-5",
@@ -70,11 +70,14 @@
   "fast_mode_disabled_reason": "sdk_opt_in_required",
   "subtype": "success",
   "api_error_status": null,
-  "result": "OK",
-  "ttft_ms": 1911,
-  "ttft_stream_ms": 1198,
-  "time_to_request_ms": 215,
+  "result": "{\"outcome\":\"Described calc.py: it's a one-line file defining an add(a, b) function that incorrectly always returns 0 instead of a+b.\"}",
+  "structured_output": {
+    "outcome": "Described calc.py: it's a one-line file defining an add(a, b) function that incorrectly always returns 0 instead of a+b."
+  },
+  "ttft_ms": 1898,
+  "ttft_stream_ms": 1371,
+  "time_to_request_ms": 219,
   "type": "result",
-  "duration_ms": 1935,
-  "uuid": "3570eea0-632c-405d-97db-16e61c037eb7"
+  "duration_ms": 6730,
+  "uuid": "aa6f3471-4b75-4682-9045-6b25396123c8"
 }

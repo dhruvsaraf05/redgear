@@ -6,7 +6,46 @@
   "session_id": "sess_01JSYNTHETIC0000000000",
   "num_turns": 7,
   "duration_ms": 42131,
+  "duration_api_ms": 39820,
   "total_cost_usd": 0.0412,
+  "stop_reason": "tool_use",
+  "terminal_reason": "completed",
+  "permission_denials": [],
+  "fast_mode_state": "off",
+  "fast_mode_disabled_reason": "sdk_opt_in_required",
+  "api_error_status": null,
+  "ttft_ms": 1911,
+  "ttft_stream_ms": 1198,
+  "time_to_request_ms": 215,
+  "uuid": "sess_01JSYNTHETIC0000000000-uuid",
+  "usage": {
+    "input_tokens": 2,
+    "cache_creation_input_tokens": 9716,
+    "cache_read_input_tokens": 21756,
+    "output_tokens": 4,
+    "output_tokens_details": {
+      "thinking_tokens": 0
+    },
+    "server_tool_use": {
+      "web_search_requests": 0,
+      "web_fetch_requests": 0
+    },
+    "service_tier": "standard"
+  },
+  "modelUsage": {
+    "claude-sonnet-5": {
+      "inputTokens": 2,
+      "outputTokens": 4,
+      "cacheReadInputTokens": 21756,
+      "cacheCreationInputTokens": 9716,
+      "webSearchRequests": 0,
+      "costUSD": 0.0412,
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "canonicalModel": "claude-sonnet-5",
+      "provider": "firstParty"
+    }
+  },
   "structured_output": {
     "outcome": "completed",
     "summary": "Added post() with an UnbalancedPosting guard. Wired it into the ledger package.",

@@ -906,9 +906,12 @@ Flag notes, each load-bearing:
 
 - **`-p` / `--print`** runs non-interactively: one prompt in, result to stdout, process exits. This is the whole integration surface.
 - **`--output-format json`** returns a structured object including the text result, `session_id`, `num_turns`, `duration_ms`, and `total_cost_usd`. Cost figures are client-side estimates and may differ from the real bill — use them for budget signalling, never present them as authoritative.
-- **`--json-schema`** with `--output-format json` places schema-conforming output in a `structured_output` field. This is how the outcome contract (§5.3) is enforced mechanically rather than by hoping the agent formats correctly.
+- **`--json-schema`** with `--output-format json` places schema-conforming output in a `structured_output` field, as a real, separate JSON object — not the same content JSON-encoded inside `result` as a string, though `result` does carry the same content that way too. This is how the outcome contract (§5.3) is enforced mechanically rather than by hoping the agent formats correctly. Read `structured_output` directly; never fall back to parsing `result`.
 - **`--allowedTools`** uses permission-rule syntax with prefix matching. `Bash(git diff *)` — **the space before `*` is significant**; without it the pattern also matches `git diff-index`. Build these strings with a tested helper, never by hand-concatenation.
 - **`--max-turns`** caps agentic turns within one dispatch. Where the installed CLI also offers a per-run spend cap, pass it from `budget.per_turn_usd`.
+- **The binary itself is resolved, not assumed on PATH.** `ClaudeCodeConfig.executable` defaults to the bare string `"claude"`, but a normal MSIX/Claude-Desktop install is deliberately not on PATH — confirmed directly on a Windows machine running exactly that install. `redgear run --executable <path>` and `redgear plan --executable <path>` override it per invocation; `config.json → runner.executable` overrides it persistently. Precedence: flag, then config, then `"claude"`. `redgear doctor` reports whichever one is actually configured and whether it resolves.
+
+**Fields observed on a real `--output-format json` payload** (Claude Code 2.1.229, three real dispatches — see `tests/fixtures/claude_payloads/README.md`), beyond the four named above: `is_error` (bool — the real success/failure discriminator; see §6.4), `duration_api_ms`, `stop_reason` (was observed as `"tool_use"` on an ordinary successful multi-turn dispatch — not a failure signal), `terminal_reason` (`"completed"` vs. `"api_error"`), `subtype` (observed as `"success"` even on a hard authentication failure — **not a reliable signal of anything**, do not read it), `permission_denials` (empty in every sample observed; see below), `api_error_status`, `fast_mode_state`, `fast_mode_disabled_reason`, `ttft_ms`, `ttft_stream_ms`, `time_to_request_ms`, `uuid`, `usage` (nested token/cache/service-tier detail), `modelUsage` (per-model cost breakdown). `TurnResult` deliberately does not carry most of these — only what the loop and the operator actually need. `permission_denials` is the one worth flagging explicitly: it is how an `--allowedTools` violation would surface, and nothing currently reads it, so a denial is invisible to the orchestrator today. That is an open question (`docs/PROGRESS.md` §5), not a settled "never will."
 
 ### 6.3 `--bare` — do not use by default
 
@@ -948,12 +951,14 @@ class TurnResult(Frozen):
 
 Parsing rules — every one exists because of a specific failure mode:
 
-1. **Exit code 0 does not mean success.** A failure inside the run is printed as the *result on stdout*, not to stderr. Parse the payload; do not branch on exit code alone.
+1. **Exit code 0 does not mean success, and a non-zero exit code does not mean failure either — they can disagree in either direction, and it is the payload that is authoritative, always.** A failure inside the run is printed as the *result on stdout*, not to stderr. Parse the payload; do not branch on exit code alone. (Verified directly: a real unauthenticated failure returned exit 1 with `is_error: true`, and a real success returned exit 0 with `is_error: false` — the two *agreed* in both samples observed. Agreement is the common case, not the exception this rule is guarding against; the rule exists for when they diverge, which the payload-first design handles either way without needing to know which case it is in.)
 2. **Do not assert specific non-zero exit codes.** There is no published global exit-code table. Treat non-zero as "the run failed" and read the payload for detail. SIGTERM produces 143.
 3. **Stderr is a progress log, not control flow.** Archive it to `agent_stderr.log`. Never grep it for decisions.
 4. **A missing or malformed `structured_output` is a parse failure, not a task failure.** Retry the dispatch once with an appended reminder of the required shape. Two consecutive parse failures end the run with `runner_error` — that is an integration bug and must be loud, not silently retried forever.
 5. **`changed_files` from the agent is a claim.** It is cross-checked against the real git diff in the `scope_check` gate. Never use it to decide what to verify.
 6. Always persist raw stdout and stderr before parsing. When parsing fails you need the bytes.
+7. **`subtype` is not a signal of anything and must not be read.** Observed as `"success"` on a real payload carrying a hard authentication failure (`is_error: true`). `is_error` (bool) and `terminal_reason` (`"completed"` vs. `"api_error"`) are the real discriminators.
+8. **`stop_reason` is not a success/failure signal either.** A real, successful, multi-turn dispatch that used a tool stopped with `stop_reason: "tool_use"`, not `"end_turn"` — every real dispatch uses tools, so treating anything other than `"end_turn"` as a failure would reject every one of them.
 
 ### 6.5 Timeouts and process hygiene
 
@@ -1172,15 +1177,15 @@ Checked **before** each iteration begins, never mid-turn. A cap hit ends the run
 | Command | Behaviour | Exit codes |
 | --- | --- | --- |
 | `redgear init` | Scaffold `.redgear/` in the current repo. Refuses if it exists or the tree is not a git repo. | 0 / 1 |
-| `redgear plan --from <file>` | Phase 1. Generates `spec.json` + `task_graph.json` in state `draft`. Read-only dispatch. | 0 / non-zero |
+| `redgear plan --from <file>` | Phase 1. Generates `spec.json` + `task_graph.json` in state `draft`. Read-only dispatch. `--executable <path>` overrides the agent CLI binary (§6.2). | 0 / non-zero |
 | `redgear approve` | Move the graph `draft → active`, recording approver and `spec_hash`. Required before `run`. | 0 / 1 |
-| `redgear run` | Phase 2. The continuous loop. `--max-iterations`, `--dry-run`, `--task <id>`. | §4.3 |
+| `redgear run` | Phase 2. The continuous loop. `--max-iterations`, `--dry-run`, `--task <id>`, `--executable <path>` (§6.2). | §4.3 |
 | `redgear status` | Rich table: task id, type, state, attempts, blocked-by. | 0 ready / 1 all terminal / 2 escalated |
 | `redgear stop` | Write `.redgear/STOP`. | 0 |
 | `redgear verify <task_id>` | Run the harness manually against a claimed task. Harness debugging. | 0 / 1 |
 | `redgear rebuild` | Replay `events.jsonl`, rewrite `task_graph.json`, diff against on-disk, fail loudly on mismatch. | 0 / 5 |
 | `redgear log [--tail N]` | Human-readable event log, secrets redacted. | 0 |
-| `redgear doctor` | Print agent CLI version, harness command availability, git state, target `CLAUDE.md` size. | 0 / 1 |
+| `redgear doctor` | Print the *configured* agent CLI's path and version (config.json, then the `"claude"` default — never just `shutil.which("claude")`, which reports "not on PATH" for a normal MSIX/Desktop install even when correctly configured), harness command availability, git state, target `CLAUDE.md` size. | 0 / 1 |
 | `redgear ui` | FastAPI on `:8787`, Next.js on `:3000`. Read-only plus approval endpoints. | 0 |
 
 **`redgear run --dry-run` composes and prints every prompt without dispatching.** This is the primary development affordance — it costs nothing and shows exactly what the agent would receive. Use it constantly.
