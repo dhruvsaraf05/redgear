@@ -38,9 +38,7 @@ from typing import Annotated
 
 import typer
 import uvicorn
-from rich import box
 from rich.console import Console
-from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from redgear import __version__, gitctx, orchestrator, planner, state_engine, verifier
@@ -175,13 +173,12 @@ def _configured_executable(root: Path, *, flag: str | None) -> str | None:
 #: equal-width rows; ``#`` is ink, ``.`` is empty.
 #:
 #: Generated from a glyph table rather than hand-typed as multi-line strings on
-#: purpose: with every glyph the same 7x7 block, alignment and the shadow
-#: offset are properties of the composition below rather than of one long
-#: string a reader has to eyeball. A typo here produces one ragged letter,
-#: not a silently skewed banner nobody notices until it reaches a terminal.
+#: purpose: with every glyph the same 7x7 block, alignment is a property of
+#: the composition below rather than of one long string a reader has to
+#: eyeball. A typo here produces one ragged letter, not a silently skewed
+#: banner nobody notices until it reaches a terminal.
 #:
-#: Strokes are two cells thick. One-cell strokes read as spindly next to a
-#: drop shadow, because the shadow is as wide as the letter it belongs to.
+#: Strokes are two cells thick, which is what gives the wordmark its weight.
 _GLYPHS: dict[str, tuple[str, ...]] = {
     "R": ("######.", "##...##", "##...##", "######.", "##.##..", "##..##.", "##...##"),
     "E": ("#######", "##.....", "##.....", "######.", "##.....", "##.....", "#######"),
@@ -197,102 +194,47 @@ _TAGLINE = "your coding agent says it's done. redgear checks."
 #: sizes; thin box-drawing characters read as broken or disconnected.
 _BLOCK = "█"
 
-#: Columns between adjacent letters. **Must exceed ``_SHADOW_DX``** or a
-#: letter's shadow overruns the next letter's stem and the wordmark turns to
-#: mush -- hit twice while building this, once at each size, so it is a real
-#: invariant rather than a theoretical one.
-_GLYPH_GAP = 3
-_SHADOW_DX = 2
-_SHADOW_DY = 1
+#: Columns between adjacent letters. One, so the wordmark reads as a single
+#: tight logotype rather than seven spaced-out characters. Zero would merge
+#: adjacent stems into an unreadable slab.
+_GLYPH_GAP = 1
 
-_INK_MAIN = "m"
-_INK_SHADOW = "s"
-
-#: Sampled from the reference the wordmark is modelled on: gold letterforms,
-#: a dusty-salmon shadow, amber panel chrome. Written as hex rather than as
-#: rich's named colours because the palette is the whole point here -- rich
-#: degrades hex to the nearest 256-colour automatically on terminals that
-#: cannot do truecolour.
-_STYLE_MAIN = "bold #f5b921"
-_STYLE_SHADOW = "#d9927d"
-_STYLE_CHROME = "#e8a33d"
-
-#: Horizontal padding inside the strapline panel, per side.
-_BANNER_PAD_X = 2
+#: One flat red, applied to the whole wordmark as a single style. Deliberately
+#: not computed per row or per cell: a uniform logotype is the point, so the
+#: colour is applied once to the finished block and there is nowhere for a
+#: gradient or a band to creep in.
+_STYLE_MAIN = "bold #dc2828"
 
 
-def _banner_grid() -> list[list[str]]:
-    """Compose the wordmark and its drop shadow onto one character grid.
+def _banner_rows() -> list[str]:
+    """The wordmark as plain text rows, one string per row.
 
-    The shadow is stamped first and the main layer second, so the main layer
-    wins every contested cell -- that overlap *is* the 3D effect, and doing it
-    on a shared grid is what makes it exact. Printing two separate lines could
-    not overlap at all; a terminal has no z-order.
+    Every glyph contributes the same row index to the same output row, joined
+    by a fixed gap, so the letters cannot drift out of alignment -- the width
+    of a row is a function of the table, not of anything typed by hand.
     """
-    glyph_h = len(_GLYPHS[_WORDMARK[0]])
-    glyph_w = len(_GLYPHS[_WORDMARK[0]][0])
-    width = len(_WORDMARK) * glyph_w + (len(_WORDMARK) - 1) * _GLYPH_GAP + _SHADOW_DX
-    grid = [[" "] * width for _ in range(glyph_h + _SHADOW_DY)]
-
-    def stamp(dy: int, dx: int, ink: str) -> None:
-        column = dx
-        for letter in _WORDMARK:
-            glyph = _GLYPHS[letter]
-            for row_index, row in enumerate(glyph):
-                for cell_index, cell in enumerate(row):
-                    if cell == "#":
-                        grid[dy + row_index][column + cell_index] = ink
-            column += len(glyph[0]) + _GLYPH_GAP
-
-    stamp(_SHADOW_DY, _SHADOW_DX, _INK_SHADOW)
-    stamp(0, 0, _INK_MAIN)
-    return grid
+    height = len(_GLYPHS[_WORDMARK[0]])
+    separator = " " * _GLYPH_GAP
+    rows: list[str] = []
+    for index in range(height):
+        letters = [_GLYPHS[letter][index] for letter in _WORDMARK]
+        rows.append(separator.join(letters).replace("#", _BLOCK).replace(".", " "))
+    return rows
 
 
 def _banner_wordmark() -> Text:
-    """The gold-on-salmon block wordmark, as one styled block of text."""
-    grid = _banner_grid()
-    art = Text()
-    for row_index, row in enumerate(grid):
-        for cell in row:
-            if cell == _INK_MAIN:
-                art.append(_BLOCK, style=_STYLE_MAIN)
-            elif cell == _INK_SHADOW:
-                art.append(_BLOCK, style=_STYLE_SHADOW)
-            else:
-                art.append(" ")
-        if row_index != len(grid) - 1:
-            art.append("\n")
-    return art
+    """The wordmark: one flat red, applied once to the whole block.
 
-
-def _banner_strapline() -> Panel:
-    """The titled panel that sits *under* the wordmark.
-
-    Deliberately not wrapped around the art: the reference layout puts the
-    version on the panel's own top border and the wordmark free-standing
-    above it, which reads as a logo with a caption rather than as a box with
-    something in it.
-
-    Width is pinned to the wordmark's so the two line up as one unit. Left to
-    size itself the panel would be tagline-width and float visibly narrower
-    than the art above it.
+    The style is set on the finished ``Text`` rather than per character, which
+    is what makes "no gradient, no banding" structural instead of something to
+    check by eye -- there is no per-row or per-cell colour path to drift.
     """
-    body = Text(_TAGLINE, style=_STYLE_MAIN)
-    return Panel(
-        body,
-        title=f"redgear v{__version__}",
-        title_align="center",
-        box=box.ROUNDED,
-        border_style=_STYLE_CHROME,
-        padding=(0, _BANNER_PAD_X),
-        width=len(_banner_grid()[0]),
-    )
+    return Text("\n".join(_banner_rows()), style=_STYLE_MAIN)
 
 
 def _banner_width() -> int:
-    """Columns the banner occupies -- the wordmark and the panel are equal."""
-    return len(_banner_grid()[0])
+    """Columns the wordmark occupies. Every row is the same length."""
+    return len(_banner_rows()[0])
 
 
 def _banner_supported(target: Console) -> bool:
@@ -331,7 +273,8 @@ def _print_banner() -> None:
     """Print the banner if the stream can carry it. Never raises."""
     if _banner_supported(console):
         console.print(_banner_wordmark())
-        console.print(_banner_strapline())
+        console.print(_TAGLINE, style="dim")
+        console.print()
 
 
 # ---------------------------------------------------------------------------
