@@ -38,8 +38,11 @@ from typing import Annotated
 
 import typer
 import uvicorn
+from rich import box
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
+from rich.text import Text
 from redgear import __version__, gitctx, orchestrator, planner, state_engine, verifier
 from redgear.api.app import create_app
 from redgear.budget import request_stop
@@ -164,6 +167,174 @@ def _configured_executable(root: Path, *, flag: str | None) -> str | None:
 
 
 # ---------------------------------------------------------------------------
+# The `redgear run` banner -- cosmetic, and deliberately only on `run`
+# ---------------------------------------------------------------------------
+
+
+#: One entry per distinct character in ``_WORDMARK``. Each glyph is a tuple of
+#: equal-width rows; ``#`` is ink, ``.`` is empty.
+#:
+#: Generated from a glyph table rather than hand-typed as multi-line strings on
+#: purpose: with every glyph the same 7x7 block, alignment and the shadow
+#: offset are properties of the composition below rather than of one long
+#: string a reader has to eyeball. A typo here produces one ragged letter,
+#: not a silently skewed banner nobody notices until it reaches a terminal.
+#:
+#: Strokes are two cells thick. One-cell strokes read as spindly next to a
+#: drop shadow, because the shadow is as wide as the letter it belongs to.
+_GLYPHS: dict[str, tuple[str, ...]] = {
+    "R": ("######.", "##...##", "##...##", "######.", "##.##..", "##..##.", "##...##"),
+    "E": ("#######", "##.....", "##.....", "######.", "##.....", "##.....", "#######"),
+    "D": ("######.", "##...##", "##...##", "##...##", "##...##", "##...##", "######."),
+    "G": (".######", "##.....", "##.....", "##.####", "##...##", "##...##", ".######"),
+    "A": ("..###..", ".##.##.", "##...##", "#######", "##...##", "##...##", "##...##"),
+}
+
+_WORDMARK = "REDGEAR"
+_TAGLINE = "your coding agent says it's done. redgear checks."
+
+#: Full block. Solid letterforms read as one continuous shape at terminal font
+#: sizes; thin box-drawing characters read as broken or disconnected.
+_BLOCK = "█"
+
+#: Columns between adjacent letters. **Must exceed ``_SHADOW_DX``** or a
+#: letter's shadow overruns the next letter's stem and the wordmark turns to
+#: mush -- hit twice while building this, once at each size, so it is a real
+#: invariant rather than a theoretical one.
+_GLYPH_GAP = 3
+_SHADOW_DX = 2
+_SHADOW_DY = 1
+
+_INK_MAIN = "m"
+_INK_SHADOW = "s"
+
+#: Sampled from the reference the wordmark is modelled on: gold letterforms,
+#: a dusty-salmon shadow, amber panel chrome. Written as hex rather than as
+#: rich's named colours because the palette is the whole point here -- rich
+#: degrades hex to the nearest 256-colour automatically on terminals that
+#: cannot do truecolour.
+_STYLE_MAIN = "bold #f5b921"
+_STYLE_SHADOW = "#d9927d"
+_STYLE_CHROME = "#e8a33d"
+
+#: Horizontal padding inside the strapline panel, per side.
+_BANNER_PAD_X = 2
+
+
+def _banner_grid() -> list[list[str]]:
+    """Compose the wordmark and its drop shadow onto one character grid.
+
+    The shadow is stamped first and the main layer second, so the main layer
+    wins every contested cell -- that overlap *is* the 3D effect, and doing it
+    on a shared grid is what makes it exact. Printing two separate lines could
+    not overlap at all; a terminal has no z-order.
+    """
+    glyph_h = len(_GLYPHS[_WORDMARK[0]])
+    glyph_w = len(_GLYPHS[_WORDMARK[0]][0])
+    width = len(_WORDMARK) * glyph_w + (len(_WORDMARK) - 1) * _GLYPH_GAP + _SHADOW_DX
+    grid = [[" "] * width for _ in range(glyph_h + _SHADOW_DY)]
+
+    def stamp(dy: int, dx: int, ink: str) -> None:
+        column = dx
+        for letter in _WORDMARK:
+            glyph = _GLYPHS[letter]
+            for row_index, row in enumerate(glyph):
+                for cell_index, cell in enumerate(row):
+                    if cell == "#":
+                        grid[dy + row_index][column + cell_index] = ink
+            column += len(glyph[0]) + _GLYPH_GAP
+
+    stamp(_SHADOW_DY, _SHADOW_DX, _INK_SHADOW)
+    stamp(0, 0, _INK_MAIN)
+    return grid
+
+
+def _banner_wordmark() -> Text:
+    """The gold-on-salmon block wordmark, as one styled block of text."""
+    grid = _banner_grid()
+    art = Text()
+    for row_index, row in enumerate(grid):
+        for cell in row:
+            if cell == _INK_MAIN:
+                art.append(_BLOCK, style=_STYLE_MAIN)
+            elif cell == _INK_SHADOW:
+                art.append(_BLOCK, style=_STYLE_SHADOW)
+            else:
+                art.append(" ")
+        if row_index != len(grid) - 1:
+            art.append("\n")
+    return art
+
+
+def _banner_strapline() -> Panel:
+    """The titled panel that sits *under* the wordmark.
+
+    Deliberately not wrapped around the art: the reference layout puts the
+    version on the panel's own top border and the wordmark free-standing
+    above it, which reads as a logo with a caption rather than as a box with
+    something in it.
+
+    Width is pinned to the wordmark's so the two line up as one unit. Left to
+    size itself the panel would be tagline-width and float visibly narrower
+    than the art above it.
+    """
+    body = Text(_TAGLINE, style=_STYLE_MAIN)
+    return Panel(
+        body,
+        title=f"redgear v{__version__}",
+        title_align="center",
+        box=box.ROUNDED,
+        border_style=_STYLE_CHROME,
+        padding=(0, _BANNER_PAD_X),
+        width=len(_banner_grid()[0]),
+    )
+
+
+def _banner_width() -> int:
+    """Columns the banner occupies -- the wordmark and the panel are equal."""
+    return len(_banner_grid()[0])
+
+
+def _banner_supported(target: Console) -> bool:
+    """Should a block-art banner go to this stream at all?
+
+    Four ways the answer is no, and each is a real case rather than a
+    defensive guess:
+
+    * **Not a terminal.** ``redgear run`` output gets piped and logged, and
+      coloured box-drawing art in a log file is noise.
+    * **NO_COLOR.** The banner is *entirely* colour; without it the shadow and
+      the letterform are the same character and the wordmark is unreadable.
+      Honouring the convention means skipping, not printing it grey.
+    * **The stream cannot encode a full block.** A Windows console on a cp1252
+      code page raises ``UnicodeEncodeError`` on ``█`` -- hit directly while
+      building this, so the banner would have crashed a real run rather than
+      degrading.
+    * **Too narrow.** Below the wordmark's width rich wraps the art into
+      unreadable fragments.
+    """
+    if not target.is_terminal or target.no_color:
+        return False
+    if os.environ.get("NO_COLOR"):
+        return False
+
+    encoding = getattr(target.file, "encoding", None)
+    try:
+        _BLOCK.encode(encoding or "ascii")
+    except (LookupError, UnicodeEncodeError):
+        return False
+
+    return target.width >= _banner_width()
+
+
+def _print_banner() -> None:
+    """Print the banner if the stream can carry it. Never raises."""
+    if _banner_supported(console):
+        console.print(_banner_wordmark())
+        console.print(_banner_strapline())
+
+
+# ---------------------------------------------------------------------------
 # init
 # ---------------------------------------------------------------------------
 
@@ -214,6 +385,10 @@ def run(
     """Run the continuous loop until a terminal condition is reached."""
     root = repo or _repo_default()
     _require_state_dir(root)
+
+    # Only `run` gets this. A banner on every invocation gets old fast, so
+    # --help, status, doctor and the rest stay plain.
+    _print_banner()
 
     if dry_run:
         _dry_run(root, only=task)
