@@ -199,11 +199,38 @@ _BLOCK = "█"
 #: adjacent stems into an unreadable slab.
 _GLYPH_GAP = 1
 
-#: One flat red, applied to the whole wordmark as a single style. Deliberately
-#: not computed per row or per cell: a uniform logotype is the point, so the
-#: colour is applied once to the finished block and there is nowhere for a
+#: One flat red for every letterform cell, with no per-row or per-cell
+#: variation: a uniform logotype is the point, so there is nowhere for a
 #: gradient or a band to creep in.
 _STYLE_MAIN = "bold #dc2828"
+
+#: The background texture: a 2x2 tile of corner glyphs, laid on a lattice
+#: behind and around the wordmark.
+_TEXTURE_TILE = ("╔╗", "╚╝")
+
+#: Lattice spacing. Sparse on purpose -- the texture is decoration behind a
+#: logo, not a second layer competing with it. Halving the horizontal density
+#: (4 -> 6) was a deliberate step back: at 4 the full-width bands carried
+#: nearly as many glyphs as the wordmark has blocks.
+_TEXTURE_PERIOD_X = 6
+_TEXTURE_PERIOD_Y = 3
+
+#: How far the textured field extends past the wordmark, so the logotype sits
+#: *in* the texture rather than merely beside it. The vertical margin has to
+#: clear ``_TEXTURE_CLEARANCE`` twice over, or the bands above and below the
+#: wordmark are eaten entirely and the texture collapses into two side panels.
+_TEXTURE_MARGIN_X = 8
+_TEXTURE_MARGIN_Y = 4
+
+#: Cells of empty space kept clear around every letterform. Without it the
+#: tiles crowd the strokes and settle inside the counters of D, R and G, and
+#: the wordmark stops being instantly readable -- which is the one thing the
+#: texture must not cost.
+_TEXTURE_CLEARANCE = 1
+
+#: Very dark red: present against black, but far enough below the wordmark's
+#: brightness that the eye reads it as ground rather than figure.
+_STYLE_TEXTURE = "#5a1e1e"
 
 
 def _banner_rows() -> list[str]:
@@ -222,19 +249,74 @@ def _banner_rows() -> list[str]:
     return rows
 
 
-def _banner_wordmark() -> Text:
-    """The wordmark: one flat red, applied once to the whole block.
+def _banner_canvas() -> list[str]:
+    """The texture field with the wordmark composited on top.
 
-    The style is set on the finished ``Text`` rather than per character, which
-    is what makes "no gradient, no banding" structural instead of something to
-    check by eye -- there is no per-row or per-cell colour path to drift.
+    Order matters and mirrors how the layers read: tiles are laid down first,
+    then the letterforms overwrite whatever they land on, so the wordmark is
+    never broken up by a glyph showing through it.
+
+    Tiles are placed **atomically** -- all four cells or none. Placing them
+    cell by cell leaves orphaned halves wherever the clearance clips a tile,
+    which reads as debris rather than as a pattern.
     """
-    return Text("\n".join(_banner_rows()), style=_STYLE_MAIN)
+    rows = _banner_rows()
+    height, width = len(rows), len(rows[0])
+    top, left = -_TEXTURE_MARGIN_Y, -_TEXTURE_MARGIN_X
+    canvas_h = height + 2 * _TEXTURE_MARGIN_Y
+    canvas_w = width + 2 * _TEXTURE_MARGIN_X
+
+    def is_ink(y: int, x: int) -> bool:
+        return 0 <= y < height and 0 <= x < width and rows[y][x] == _BLOCK
+
+    def is_crowded(y: int, x: int) -> bool:
+        span = range(-_TEXTURE_CLEARANCE, _TEXTURE_CLEARANCE + 1)
+        return any(is_ink(y + dy, x + dx) for dy in span for dx in span)
+
+    canvas = [[" "] * canvas_w for _ in range(canvas_h)]
+
+    for row in range(canvas_h - 1):
+        for column in range(canvas_w - 1):
+            if row % _TEXTURE_PERIOD_Y or column % _TEXTURE_PERIOD_X:
+                continue
+            corners = [(row, column), (row, column + 1), (row + 1, column), (row + 1, column + 1)]
+            if any(is_crowded(top + y, left + x) for y, x in corners):
+                continue
+            for y, x in corners:
+                canvas[y][x] = _TEXTURE_TILE[y - row][x - column]
+
+    for row in range(canvas_h):
+        for column in range(canvas_w):
+            if is_ink(top + row, left + column):
+                canvas[row][column] = _BLOCK
+
+    return ["".join(row) for row in canvas]
+
+
+def _banner_wordmark() -> Text:
+    """The composited banner: dark texture behind, flat red letterforms on top.
+
+    Every ``_BLOCK`` cell gets the same style object, so the wordmark stays one
+    uniform red no matter where it sits on the canvas.
+    """
+    art = Text()
+    canvas = _banner_canvas()
+    for index, row in enumerate(canvas):
+        for cell in row:
+            if cell == _BLOCK:
+                art.append(cell, style=_STYLE_MAIN)
+            elif cell != " ":
+                art.append(cell, style=_STYLE_TEXTURE)
+            else:
+                art.append(" ")
+        if index != len(canvas) - 1:
+            art.append("\n")
+    return art
 
 
 def _banner_width() -> int:
-    """Columns the wordmark occupies. Every row is the same length."""
-    return len(_banner_rows()[0])
+    """Columns the banner occupies. Every row is the same length."""
+    return len(_banner_canvas()[0])
 
 
 def _banner_supported(target: Console) -> bool:
@@ -245,14 +327,17 @@ def _banner_supported(target: Console) -> bool:
 
     * **Not a terminal.** ``redgear run`` output gets piped and logged, and
       coloured box-drawing art in a log file is noise.
-    * **NO_COLOR.** The banner is *entirely* colour; without it the shadow and
-      the letterform are the same character and the wordmark is unreadable.
-      Honouring the convention means skipping, not printing it grey.
-    * **The stream cannot encode a full block.** A Windows console on a cp1252
-      code page raises ``UnicodeEncodeError`` on ``█`` -- hit directly while
+    * **NO_COLOR.** Colour is what separates the dark texture from the bright
+      letterforms; unstyled, the corner glyphs are just clutter around the
+      wordmark. Honouring the convention means skipping the banner, not
+      printing it grey.
+    * **The stream cannot encode the art.** A Windows console on a cp1252 code
+      page raises ``UnicodeEncodeError`` on ``█`` -- hit directly while
       building this, so the banner would have crashed a real run rather than
-      degrading.
-    * **Too narrow.** Below the wordmark's width rich wraps the art into
+      degrading. Every character the banner can emit is checked, not just the
+      block: the texture glyphs have their own encoding story (cp437 carries
+      all five, cp1252 none of them).
+    * **Too narrow.** Below the banner's width rich wraps the art into
       unreadable fragments.
     """
     if not target.is_terminal or target.no_color:
@@ -261,8 +346,9 @@ def _banner_supported(target: Console) -> bool:
         return False
 
     encoding = getattr(target.file, "encoding", None)
+    art_characters = _BLOCK + "".join("".join(row) for row in _TEXTURE_TILE)
     try:
-        _BLOCK.encode(encoding or "ascii")
+        art_characters.encode(encoding or "ascii")
     except (LookupError, UnicodeEncodeError):
         return False
 
