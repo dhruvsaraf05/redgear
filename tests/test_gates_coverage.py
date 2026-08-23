@@ -30,8 +30,8 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from redgear.schemas import Claim, GateName, GateStatus, HarnessConfig, TaskNode
-from redgear.verifier import changed_line_ratio, coverage_delta_check, run_harness
+from redgear.schemas import Claim, GateName, GateStatus, HarnessConfig, TaskNode, Verdict
+from redgear.verifier import changed_line_ratio, coverage_delta_check, run_gates, run_harness
 
 # The module the "agent" writes. Line numbers are load-bearing -- the expected
 # ratio below is derived from them, so keep the numbering if you edit this.
@@ -321,3 +321,47 @@ def test_gate_is_skipped_for_test_authoring(python_repo: Path) -> None:
     )
     assert result.status == GateStatus.SKIPPED
     assert result.reasons
+
+
+# ---------------------------------------------------------------------------
+# Regression: a skipped-as-not-applicable coverage_delta must not fail the
+# aggregate verdict. Found by the first real end-to-end run against a live
+# agent CLI -- a correct, fully in-scope test_authoring turn was rejected
+# with every individual gate reporting "passed" and no gate named as the
+# cause, because run_gates' verdict computation treated coverage_delta's
+# legitimate not-applicable skip the same as a real gap in verification.
+# ---------------------------------------------------------------------------
+
+
+def test_a_correct_test_authoring_turn_passes_the_real_pipeline(python_repo: Path) -> None:
+    """Every gate that runs for a valid test_authoring turn actually passes;
+    coverage_delta is the one gate skipped by design (§4.5, §7.2); the
+    aggregate verdict must be PASS, not FAIL with no gate named as the cause.
+    """
+    claim = _claim(python_repo)
+    harness = _harness(floor=0.0)
+
+    # Writable for test_authoring is tests/**; src/** stays untouched, so the
+    # existing (correct) add() implementation makes this assertion false --
+    # a real red, for the right reason, without touching frozen code.
+    (python_repo / "tests" / "test_pkg.py").write_text(
+        "from pkg import add\n\n\ndef test_add():\n    assert add(1, 2) == 999\n",
+        encoding="utf-8",
+    )
+
+    proof = run_gates(
+        python_repo,
+        task=_task(task_type="test_authoring"),
+        claim=claim,
+        declared=["tests/test_pkg.py"],
+        attempt=1,
+        harness=harness,
+        criteria=[],
+    )
+
+    by_name = {gate.name: gate for gate in proof.gates}
+    assert by_name[GateName.TESTS_PASS].status == GateStatus.PASSED, proof.gates
+    assert by_name[GateName.COVERAGE_DELTA].status == GateStatus.SKIPPED, proof.gates
+    assert proof.verdict is Verdict.PASS, (
+        f"a correct test_authoring turn was rejected with no gate actually failing: {proof.gates}"
+    )

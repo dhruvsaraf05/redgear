@@ -3,7 +3,7 @@
 Your coding agent says it's done. Nobody checked.
 
 That's the failure redgear exists to close. Coding agents are good at
-writing code and bad at grading their own work — they report success whether
+writing code and bad at grading their own work. They report success whether
 or not the tests pass, whether or not they touched files they weren't asked
 to, whether or not the change does what it claims. Someone has to
 independently verify each turn before the next one starts, and today that
@@ -12,12 +12,12 @@ someone is a human reading diffs at 11pm.
 redgear is that someone, automated. It's an orchestrator, not an agent: it
 never writes code itself. It decides what to work on next, writes the prompt
 that says so, hands it to a coding agent CLI (Claude Code is the reference
-implementation), and then — before trusting a word of the agent's report —
+implementation), and then, before trusting a word of the agent's report,
 independently re-derives the truth: runs the real test suite itself,
 re-hashes every file the agent was told not to touch, recomputes the real
 `git diff` instead of reading the agent's claimed file list. If the agent
 says "done" and the evidence disagrees, the run doesn't advance. If the agent
-says "I'm blocked," that costs nothing — an honest stop should always be
+says "I'm blocked," that costs nothing: an honest stop should always be
 cheaper than a lie.
 
 ## Install
@@ -27,7 +27,7 @@ pipx install redgear
 ```
 
 Needs Python 3.12+, `git`, and a [Claude Code](https://claude.com/claude-code)
-install. See [Requirements](#requirements) below — the Claude Code binary
+install. See [Requirements](#requirements) below: the Claude Code binary
 resolution has one gotcha worth reading before your first run.
 
 ## A worked example
@@ -37,19 +37,19 @@ cd my-project
 redgear init
 ```
 
-Scaffolds `.redgear/` — the whole audit trail lives here and is committed to
+Scaffolds `.redgear/`. The whole audit trail lives here and is committed to
 your repo like any other file.
 
 ```bash
 redgear plan --from docs/PRD.md
 ```
 
-Dispatches a **read-only** agent turn (`Read`, `Glob`, `Grep` only — it
+Dispatches a **read-only** agent turn (`Read`, `Glob`, `Grep` only, it
 cannot edit a single file) to turn your requirements doc into a task graph:
 which pieces of work, in what order, with what acceptance criteria. It lands
 in `.redgear/task_graph.json` in state `draft` and **`redgear run` refuses to
 touch a draft plan.** The plan defines what "correct" means for every task
-that follows — a bad plan produces confidently verified wrong software, and
+that follows. A bad plan produces confidently verified wrong software, and
 no amount of gate rigor downstream catches that. A human has to look at it
 first. There is no flag that skips this.
 
@@ -66,7 +66,7 @@ redgear status
 └────────┴───────────────┴─────────┴─────┴────────────┘
 ```
 
-Read the plan, then approve it explicitly — this records *who* approved
+Read the plan, then approve it explicitly. This records *who* approved
 *which* version of the spec:
 
 ```bash
@@ -78,7 +78,7 @@ redgear run --dry-run
 ```
 
 Composes and prints every prompt the loop would send, **dispatching
-nothing**. Costs nothing. Use it constantly — it's the fastest way to catch
+nothing**. Costs nothing. Use it constantly: it's the fastest way to catch
 a badly-scoped task before it costs a real agent turn.
 
 ```bash
@@ -89,19 +89,19 @@ redgear run
 redgear run
   stop with: redgear stop  (or create .redgear/STOP)
 
-  agent CLI: claude — 2.1.229
+  agent CLI: claude (2.1.229)
 
-complete — 6 iteration(s), 6 verified, 0 escalated
+complete: 6 iteration(s), 6 verified, 0 escalated
 ```
 
 That's the whole interface for a clean run: a banner naming the brake, the
 resolved agent CLI, and one summary line at the end. Everything else lives in
-the audit trail, because the point isn't a chatty console — it's a record
+the audit trail, because the point isn't a chatty console. It's a record
 you can actually check.
 
 ### What the audit trail shows when something goes wrong
 
-A task that fails a gate doesn't die — it goes back into the queue, and the
+A task that fails a gate doesn't die. It goes back into the queue, and the
 next prompt for it carries the actual failure excerpt, so the retry is
 corrective rather than a blind repeat. `redgear status` shows this as an
 attempt count climbing against the cap:
@@ -117,13 +117,13 @@ assumption:
 ```
 │ T-0007 │ implementation│ escalated│ 2/3 │ -         │
 
-escalated: T-0007 — needs a human
+escalated: T-0007 (needs a human)
 ```
 
-Reporting "blocked" costs an agent nothing — no attempt is consumed. Claiming
+Reporting "blocked" costs an agent nothing: no attempt is consumed. Claiming
 completion it can't support does; verification runs independently either way.
 Every one of these transitions is one line in `redgear log`, redacted,
-readable, and reconstructible from `.redgear/events.jsonl` alone — that file,
+readable, and reconstructible from `.redgear/events.jsonl` alone. That file,
 not the console output, is the actual source of truth.
 
 ## The seven guarantees
@@ -131,7 +131,7 @@ not the console output, is the actual source of truth.
 Every design decision in this project traces back to one of these:
 
 1. **It runs the tests itself.** No field the agent reports ever decides a
-   verdict — only real exit codes and a real `git diff`, recomputed by
+   verdict. Only real exit codes and a real `git diff`, recomputed by
    redgear after the agent's process has already exited.
 2. **Tests are frozen during implementation, and code is frozen during test
    authoring.** SHA-256-enforced. An agent that could edit both the tests and
@@ -144,23 +144,23 @@ Every design decision in this project traces back to one of these:
    rebuilt from it byte-for-byte. Nothing is asserted that isn't reconstructible.
 5. **redgear holds no API key and makes no outbound network call.** All
    inference is delegated to your own agent CLI subprocess, authenticated with
-   whatever you already configured — redgear never touches a credential, never
+   whatever you already configured. redgear never touches a credential, never
    calls a model API directly, and adds zero egress of its own. All spend
    belongs to your agent CLI session, not to redgear.
 6. **Every run is bounded, and interruptible.** Hard caps on iterations,
    wall-clock time, and consecutive failures; a stop file honored between
    iterations; a process-tree kill on timeout. It never commits, pushes, or
-   rewrites history in your repository — that stays yours.
+   rewrites history in your repository. That stays yours.
 7. **Untrusted text is never treated as an instruction.** Test output, diffs,
    and source documents are explicitly delimited in every prompt as data to
    diagnose, not commands to follow.
 
 ## Requirements
 
-- **Python 3.12+** — a floor, not a target. Nothing in redgear needs a newer
+- **Python 3.12+**, a floor, not a target. Nothing in redgear needs a newer
   interpreter; this just keeps the requirement honest against what's actually
   tested.
-- **git**, with a clean working tree before every run — without a clean
+- **git**, with a clean working tree before every run. Without a clean
   baseline, the diff audit redgear runs is fiction.
 - **[Claude Code](https://claude.com/claude-code)**, the reference agent CLI
   adapter. Other conforming CLIs are architecturally supported but untested.
@@ -180,28 +180,12 @@ or persist it once in `.redgear/config.json`:
 ```
 
 `redgear doctor` reports whichever one is actually configured, and whether it
-resolves — run it first if a run fails with "not installed or not on PATH."
-
-## What's not done yet
-
-- **The browser control plane.** The read-only API behind it
-  (`redgear ui`, serving on `:8787`) is implemented — it replays the event
-  log into a task graph, prompts, diffs, and proofs, all read-only except the
-  single human-approval endpoint. The dashboard that renders it in a browser
-  is not built.
-- **redgear has not yet driven a project through the full loop, unattended,
-  itself.** This codebase — everything through the API above — was built by
-  hand-driving Claude Code through individual task prompts, one human relaying
-  each one, exactly the bottleneck redgear exists to remove. The loop that
-  removes it is complete and tested against a deterministic fake agent, but
-  it has not yet completed a real, live, end-to-end run with no human in the
-  middle. That's stated here rather than hidden, because a tool whose whole
-  pitch is "don't trust an unverified claim" cannot make one about itself.
+resolves. Run it first if a run fails with "not installed or not on PATH."
 
 ## The plan
 
-The build plan this project is executing on itself — task graph, spec,
-architectural contract — lives in
+The build plan this project is executing on itself (task graph, spec,
+architectural contract) lives in
 [`.redgear/task_graph.json`](.redgear/task_graph.json) and
 [`.redgear/spec/spec.json`](.redgear/spec/spec.json). The contract itself is
 [`CLAUDE.md`](CLAUDE.md); read it before touching any code here.

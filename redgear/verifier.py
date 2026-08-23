@@ -93,6 +93,14 @@ GATE_ORDER: list[GateName] = [
 #: Gates that shell out and therefore need configured commands to run at all.
 _NEEDS_HARNESS = frozenset(GATE_ORDER[2:])
 
+#: Section 4.5 / section 7.2: a scaffold task has no covered code to measure,
+#: and a test_authoring task writes tests rather than covered code and is red
+#: by design. ``coverage_delta_check`` skips unconditionally for both, and
+#: that skip is a legitimate "this gate does not apply", never a sign that
+#: verification is incomplete -- ``run_gates``' aggregate verdict below reads
+#: this same set so the two cannot drift apart.
+_COVERAGE_NOT_APPLICABLE = frozenset({"scaffold", "test_authoring"})
+
 _SKIPPED_REASON = "skipped: an earlier gate failed and the pipeline short-circuits"
 _NO_HARNESS_REASON = (
     "no_harness_config: gates 3-6 execute configured commands and were not "
@@ -1071,7 +1079,7 @@ def coverage_delta_check(
     run: HarnessRun,
 ) -> GateResult:
     """Is changed-line coverage at or above the configured floor?"""
-    if task.type in ("scaffold", "test_authoring"):
+    if task.type in _COVERAGE_NOT_APPLICABLE:
         # Section 4.5 exempts scaffold. A test_authoring task writes tests
         # rather than covered code, and its suite is red by design -- coverage
         # measured from that run says nothing about an implementation that has
@@ -1152,7 +1160,20 @@ def run_gates(
     orchestrator must always pass a harness, and nothing here forces it to.
 
     The verdict is PASS only when every gate in the contracted list actually
-    passed. A skipped gate is not a passed gate.
+    passed -- **with one named exception.** ``coverage_delta`` is skipped
+    unconditionally for ``scaffold`` and ``test_authoring`` tasks (see
+    ``_COVERAGE_NOT_APPLICABLE`` and ``coverage_delta_check``), and that skip
+    means "this gate does not apply to this task type", not "verification is
+    incomplete". Treating it as a normal skip made every ``test_authoring``
+    task fail unconditionally the moment a real harness was supplied --
+    found by the first real end-to-end run, where an agent wrote a correct,
+    fully in-scope failing test and every gate that actually ran reported
+    ``passed``, yet the aggregate verdict still said ``fail`` with no gate
+    named as the cause. Every other skip reason (an earlier failure
+    short-circuiting the pipeline, or no ``HarnessConfig`` at all) still
+    counts against the verdict exactly as before -- this exemption is scoped
+    to the one gate and the one task-type set where a skip was never a sign
+    of missing verification in the first place.
     """
     results: list[GateResult] = []
     short_circuited = False
@@ -1202,7 +1223,16 @@ def run_gates(
         if result.status is GateStatus.FAILED:
             short_circuited = True
 
-    passed_everything = all(gate.status is GateStatus.PASSED for gate in results)
+    coverage_gate_exempt = task.type in _COVERAGE_NOT_APPLICABLE
+    passed_everything = all(
+        gate.status is GateStatus.PASSED
+        or (
+            gate.name is GateName.COVERAGE_DELTA
+            and coverage_gate_exempt
+            and gate.status is GateStatus.SKIPPED
+        )
+        for gate in results
+    )
     return Proof(
         task_id=task.id,
         attempt=attempt,

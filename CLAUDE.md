@@ -175,6 +175,8 @@ An unattended loop that spawns an agent with file-write and shell access is a ge
 - redgear **never commits, pushes, or rewrites git history** in the target repository. It reads git state. The human commits.
 - A run refuses to start on a dirty working tree. Without a clean baseline the diff audit is fiction.
 
+> **Open gap, found by the first real run against a live agent CLI, not yet resolved (`docs/PROGRESS.md` §5, "Nothing commits between tasks").** "The human commits" assumes a human is present to do it. Inside an unattended `redgear run` across more than one task, nobody is. A verified task's own output sits uncommitted in the working tree, `git rev-parse HEAD` never moves, and the *next* task's `scope_check` (§7.4) diffs against that same stale baseline — so the first task's legitimate, already-verified output looks like an out-of-scope write to the second task, permanently, regardless of what the second task's agent does. Confirmed directly: a real two-task plan run end to end could not get past this. This is a genuine tension between this guarantee and G2's freeze mechanism, not a bug in either one alone, and every fix shape changes either this guarantee's wording or the loop's "continuous, unattended" claim in §1.2 — see `docs/PROGRESS.md` for the options. Do not resolve this by having redgear commit without reading that entry first.
+
 #### G7 — Untrusted input containment
 
 redgear composes prompts from a mix of trusted and untrusted material, and sends them to an agent with `Edit` and `Bash` permissions. This is a real injection surface and must be treated as one.
@@ -1088,7 +1090,9 @@ nested run overwrites the outer session's own report.
 
 ### 7.4 Git diff computation
 
-Baseline is established at **claim** time, not verification time: tree asserted clean, `base_commit` from `git rev-parse HEAD`.
+Baseline is established at **claim** time, not verification time: `base_commit` from `git rev-parse HEAD`.
+
+**Correction, verified directly against the code rather than assumed: the tree is asserted clean once, at run start (section 8.4), not re-asserted at each individual claim.** `orchestrator.run` calls `gitctx.dirty_paths` exactly once, before the loop begins; `state_engine.claim_task` never checks tree cleanliness at all. For a run's first claim these coincide and the distinction is invisible. They stop coinciding the moment a run claims a **second** task: nothing commits between tasks (G6), so `base_commit` computed fresh at the second claim (`git rev-parse HEAD`) is still the *same* commit as the first claim's, and the working tree is no longer clean relative to it — it carries the first task's own real, uncommitted, already-verified output. See G6's note above and `docs/PROGRESS.md` §5 ("Nothing commits between tasks") for what this does to `scope_check` on the very next task, found by the first real multi-task run.
 
 ```python
 # Untracked files do not appear in `git diff`. Intent-to-add makes them visible
@@ -1360,9 +1364,9 @@ Where the two disagree, **the graph wins.** Do not work from the table.
 
 | | |
 | --- | --- |
-| Spec | `.redgear/spec/spec.json` — 12 functional, 10 non-functional requirements, 10 out-of-scope boundaries |
-| Spec ID | `spec-dd2914` |
-| Spec hash | `sha256:dd2914150ecf303b0e5a584f508c32807f72f75277c488c788eae06c4f31e988` |
+| Spec | `.redgear/spec/spec.json` — 12 functional, 10 non-functional requirements, 11 out-of-scope boundaries |
+| Spec ID | `spec-97ee71` (supersedes `spec-dd2914`; see `.redgear/spec/history/`) |
+| Spec hash | `sha256:97ee71867c3867b80290dfd89c89d4c1dcb8843a8271ba4052b00c60e61ab0c6` |
 | Graph | `.redgear/task_graph.json` — 41 nodes: 3 scaffold, 19 test_authoring, 19 implementation |
 | Root | `T-0001` (repository bootstrap) — the only node with no dependencies |
 | Leaf | `T-0041` (packaging and release) — the only node nothing depends on |

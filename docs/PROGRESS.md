@@ -7,13 +7,15 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after T-0041 (packaging and release readiness) — the last task
-in the graph. Every module in §2.2 exists except the Next.js UI (T-0040,
-deliberately deferred, see §2). The spec was amended and re-hashed
-(`spec-97ee71`, supersedes `spec-dd2914`) to resolve the Python-version
-contradiction open since T-0021 and to record T-0040's deferral. The
-self-hosting claim is now stated plainly rather than left open — see §2 and
-§5.*
+*Last updated: after the first real, live `redgear run` against an actual
+Claude Code CLI — not `redgear`'s own repository, a throwaway two-task
+project. It found a real bug in `verifier.py` on the first attempt (fixed,
+regression-tested, reran clean) and a second, deeper structural gap on the
+second attempt (found, not fixed — needs a human decision, §5). Before that:
+a cosmetic README pass (em dashes removed throughout, the "What's not done
+yet" section removed by explicit request), and T-0041 (packaging and release
+readiness) — the last task in the graph. Every module in §2.2 exists except
+the Next.js UI (T-0040, deliberately deferred, see §2).*
 
 ---
 
@@ -31,12 +33,13 @@ serves a read-only FastAPI control plane, and the package builds, installs,
 and exposes a working `redgear` command from a clean wheel. **"Done" here
 still means the same thing it has meant since T-0002: built and verified by a
 human relaying prompts between sessions, not by redgear driving itself.**
-That is now stated in the README rather than left implicit — see §2 and §5.
+That is recorded here and in `CLAUDE.md`, not currently stated as a dedicated
+section in the README — see §2's "What's not done yet" entry for why.
 
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **402 passed, 1 skipped** (unchanged from T-0038/39 — this task touched no test file except one two-constant frozen-file edit, §4) |
+| Test suite | **403 passed, 1 skipped** (was 402 — one new regression test, §2) |
 | Suite runtime | **Unreliable on this machine — measured 83 s to 463 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
 | Coverage | **90.35%** (floor 85%) |
@@ -46,7 +49,8 @@ That is now stated in the README rather than left implicit — see §2 and §5.
 | Not built | `ui/` (T-0040, deliberately deferred post-1.0 — see above) |
 | Package | Builds clean (`python -m build`), installs from wheel with a working `redgear` entry point, manifest has nothing sensitive. See §2. |
 | Spec | `spec-97ee71` (supersedes `spec-dd2914`, history in `.redgear/spec/history/`) — NFR-10 now says 3.12, FR-12 now names the deferred UI. See §2. |
-| Crossover | **Still not reached.** No approved plan, no event log behind the 40 done tasks (T-0040 stays deliberately deferred, not counted as done) — see §2's "self-hosting claim" entry and §5. This is now a stated fact, not an open question about what to do — the four options from the previous entry are moot: the answer is "say so," not "fabricate, seed, or re-execute." |
+| **First real run** | `redgear run` against a real Claude Code CLI, a throwaway two-task project, real money spent (~$1.60, 6 dispatches). Found and fixed one real bug (`verifier.py`'s aggregate verdict, §2); found and did **not** fix a second, deeper one (no commit happens between a verified task and the next task's claim, so a real multi-task run cannot currently complete unattended — §5, "Nothing commits between tasks"). |
+| Crossover | **Still not reached, and now known to need more than an event log.** No approved plan, no event log behind the 40 done tasks (T-0040 stays deliberately deferred, not counted as done) — see §2's "self-hosting claim" entry and §5. Separately, the first real run just showed that *even with* an event log and an approved plan, today's loop cannot complete two real, genuinely dependent tasks back to back without a human committing between them — see §5, same entry as above. That gap was invisible until this session because redgear's own bootstrap (T-0001–T-0041) was hand-driven, with a human committing between every pair by hand (§4.6.1); nothing had ever asked the automated loop to do that step itself. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
 commands come from configuration only) and the resolved inherited criteria.
@@ -163,18 +167,6 @@ report `complete` with the work unfinished.
 So selection now returns anything **claimable**. That is also what keeps the
 retry free of a special case — a retry is simply the next selection, which is
 the whole of AC-3.
-
-### Python is 3.12; the spec still says 3.11 (**unresolved** — see §5)
-
-`pyproject.toml`, the ruff target, mypy, the CI matrix and `CLAUDE.md` §1.1 all
-say **3.12**. Local development runs **3.14**.
-
-The 3.11 floor was dropped because nothing ever ran against it — a floor no
-build exercises is a promise nothing checks.
-
-`.redgear/spec/spec.json` `NFR-10` still says 3.11 and is **not** edited: it is
-content-addressed, and changing it moves `sha256:dd2914…` and marks all 41
-nodes `spec_drift` (§3.5).
 
 ### Gate 2 is defence in depth, not a second chance at gate 1
 
@@ -706,12 +698,14 @@ same way `test_smoke.py`'s tests did; leaving them at the old value would
 make a correct amendment look like a bug.
 
 **One thing this task found but did not fix, out of scope:** `CLAUDE.md`
-§12.1's table still names `spec-dd2914` and the old hash. `CLAUDE.md` is not
+§12.1's table still named `spec-dd2914` and the old hash. `CLAUDE.md` was not
 in T-0041's writable scope (`pyproject.toml`, `.github/**`, `README.md`,
 `docs/**`), and unlike `task_graph.json` — which Fix 1's own numbered steps
-require touching — nothing about updating the spec instructs touching
+require touching — nothing about updating the spec instructed touching
 `CLAUDE.md`. Reverted an initial edit there rather than keep it unauthorized.
-**§12.1 now states a stale spec id and hash and needs an authorized edit.**
+**Resolved in a later session** (the README-cleanup entry below), once
+"update the living docs" gave explicit authorization to touch `CLAUDE.md`
+directly.
 
 ### The self-hosting claim — decided, not fabricated
 
@@ -728,8 +722,10 @@ ship with a fabricated audit trail as its own first artifact. Seeding
 `.redgear/events.jsonl` with `imported_from_manual_phase` events — the
 least-bad of the four original options — would still be redgear's own state
 directory asserting a history that did not happen through the mechanism it
-exists to audit. The README's "What's not done yet" section now says this
-directly rather than the previous open question doing so implicitly.
+exists to audit. At the time this decision was made, the README stated it
+directly in a dedicated section; that section was later removed for
+presentation reasons, and the entry immediately below this one records why
+and where the fact now lives instead.
 
 **This does not close the underlying gap** — there is still no event log
 behind the 40 done tasks, and `redgear` pointed at its own repository today
@@ -738,6 +734,161 @@ What changed is that the project no longer has an *open question* about what
 to say about this; it has a decided, stated answer. See §5 for what would
 actually need to happen for the crossover to become real (an approved plan
 and a genuine event log — no shortcut removes that).
+
+### The README's "What's not done yet" section was removed, by explicit request
+
+The entry above records why that section existed: a tool whose pitch is "an
+unverified claim is worthless" cannot make one about itself, so the gap had
+to be stated somewhere public rather than only in this internal file. A later
+session asked for the section to be removed from the README outright, for
+presentation reasons (a cleaner, punchier front page), and it was removed on
+that explicit instruction after the tension was flagged once.
+
+**What did not change: the underlying facts, or where they are recorded.**
+The loop has still never driven a project end to end unattended, and the
+browser control plane is still not built. Both remain true and both remain
+recorded here (§1, §2 above) and in `CLAUDE.md` where relevant — this file is
+the one place in the project that is not allowed to only say what looks good.
+What moved is which document carries the caveat prominently: previously the
+README did, now only the internal docs do. If a future session wants that
+tension resolved differently (a one-line status note in the README rather
+than a full section, for instance), that is a presentation choice to make
+deliberately, not a fact to rediscover.
+
+### `verifier.py`'s aggregate verdict ignored a gate's own legitimate skip — found by the first real run, fixed the same session
+
+The first real, live `redgear run` (throwaway two-task project, a real Claude
+Code CLI, `--executable` pointed at the MSIX install) found a real bug on its
+very first dispatch. The agent wrote a correct, fully in-scope failing test
+for a `test_authoring` task — nothing outside `tests/**`, the right assertion,
+reported `completed` honestly. redgear rejected it anyway. The proof
+(`verdict.json`) showed every gate that ran had genuinely **passed**:
+`scope_check`, `frozen_hash_check`, `lint`, `tests_pass` (with
+`"red_via_failure: 1 of 1 target test(s) fail"` — correct red, for the right
+reason), `criteria_coverage`. `coverage_delta` was correctly `skipped` as
+`not_applicable` — CLAUDE.md §7.2 and §4.5 both say a `test_authoring` task
+is not measured for coverage, on purpose; its suite is red by design. Despite
+every gate agreeing the work was correct, the top-level verdict said `fail`,
+and the `task_rejected` event named no gate as the cause.
+
+**On the retry, the agent read its own attempt-1 proof, correctly diagnosed
+the exact bug** (every gate says passed, verdict says fail, nothing names
+why), correctly concluded there was nothing left in its own scope to fix, and
+reported `blocked` rather than guessing — G3 working exactly as designed,
+independently confirming the root cause a human reading the same file would
+reach.
+
+**Root cause:** `run_gates`' aggregate check,
+`passed_everything = all(gate.status is GateStatus.PASSED for gate in results)`,
+treated *every* non-`PASSED` status as a reason to fail, including a gate
+that was `SKIPPED` because it legitimately does not apply to this task type.
+Since `coverage_delta` skips unconditionally for every `scaffold` and
+`test_authoring` task the moment a real `HarnessConfig` is supplied, and
+two-phase TDD means every `implementation` task depends on a verified
+`test_authoring` task first, **no `test_authoring` task could ever pass
+verification with a real harness** — not a one-off, a systemic block on the
+loop's core function. Confirmed by temporarily reverting the fix and
+re-running the new regression test: it reproduces the exact real-run symptom
+(`verdict.json` all-passed, `Proof.verdict` still `FAIL`).
+
+**Why 403 passing tests never caught it:** the only test in the whole suite
+that runs the real six-gate pipeline end to end
+(`test_orchestrator.py::test_real_gates_end_to_end`) starts its
+`test_authoring` node **pre-verified** and only actually dispatches the
+`implementation` node, where `coverage_delta` genuinely measures rather than
+skips. Nothing exercised the intersection of "real harness" + "a
+`test_authoring` task actually runs" + "check the aggregate verdict."
+
+**The fix**, in `redgear/verifier.py`: a new module constant
+`_COVERAGE_NOT_APPLICABLE = frozenset({"scaffold", "test_authoring"})`, now
+the single source both `coverage_delta_check` and `run_gates`' aggregate
+check read, so the two cannot drift apart the way the bug let them. The
+aggregate check now treats `coverage_delta` as satisfied when it is `SKIPPED`
+*and* the task type is in that set — every other skip reason (short-circuit
+after an earlier failure, or no harness configured at all) still counts
+against the verdict exactly as before. Verified this does not weaken the "no
+harness" footgun (§7.3): in that case `lint`/`tests_pass`/`criteria_coverage`
+are *also* skipped for every task type, and none of those three gained an
+exemption, so the aggregate check still correctly fails.
+
+One regression test added,
+`tests/test_gates_coverage.py::test_a_correct_test_authoring_turn_passes_the_real_pipeline`
+— calls `run_gates` directly (not the individual gate function) against a
+real repo with a genuinely correct, in-scope `test_authoring` change, and
+asserts `Proof.verdict is Verdict.PASS`. No frozen-file edit needed: nothing
+existing asserted the old (buggy) aggregate behaviour, only individual gates'
+own `SKIPPED` status in isolation.
+
+**Confirmed by rerunning the real test after the fix**, not just by the unit
+test: same throwaway project, fresh repo (the first attempt's task had
+already escalated, and there is no "un-escalate" command by design — starting
+over cleanly is the honest path, not hand-editing state). T-0001 verified on
+its first real attempt this time, all six gates recorded correctly. See the
+next entry for what happened to T-0002.
+
+### Nothing commits between tasks — the first real multi-task run could not complete, and this needs a human decision
+
+The rerun above got further, but T-0002 (the dependent `implementation` task)
+escalated after three real attempts, on `scope_check` every time, over
+`tests/test_calc.py` — a file it never touched. Confirmed directly against
+the real repo: that file was **never committed**. T-0001 verified it, but
+redgear never commits (G6, by design — "the human commits"), and nothing else
+committed it either in an unattended `redgear run`. So when T-0002 claims and
+computes its own `base_commit` fresh (`git rev-parse HEAD`, per CLAUDE.md
+§7.4), that is still the pre-T-0001 commit, because HEAD genuinely never
+moved. `scope_check` diffs against that stale baseline, so T-0001's own
+legitimate, already-verified output looks like an out-of-scope write for
+T-0002 — permanently, on every attempt, regardless of what T-0002's agent
+does. **The agent diagnosed this correctly on its third attempt** —
+`git log --oneline -- tests/test_calc.py` shows no commit ever added that
+file... I cannot fix it without staging or committing a `tests/**` path,
+which is outside my writable/creatable scope for this task — and reported
+`blocked` rather than retrying blindly. G3 working as designed, again; the
+task itself is genuinely unfixable from inside it.
+
+**Why nothing caught this either.** Every existing test that runs two
+dependent tasks in one `orchestrator.run()` call either pre-verifies the
+`test_authoring` node without ever actually dispatching it
+(`test_real_gates_end_to_end`, `test_pass_advances_and_continues`, and every
+other `test_orchestrator.py` scenario), or has both tasks write to
+non-overlapping paths that are never frozen for each other. Nothing in the
+suite exercises "a real `test_authoring` task actually writes a new file,
+gets verified, and its real dependent `implementation` task claims next" —
+because that needs two genuine dispatches in sequence, which no test does.
+And redgear's own bootstrap (T-0001 through T-0041) never hit it either,
+because a **human** committed between every pair by hand, exactly as §4.6.1
+documents: *"Complete both phases of a pair in one session... commit once
+when green."* That instruction was written for the human-driven manual phase.
+Nothing says who or what performs the equivalent step inside an unattended
+`redgear run`, and the answer, checked directly, is: nobody does.
+
+**This is not a bug to quietly patch — it interacts with a headline
+guarantee (G6) and a marketed README claim** ("It never commits, pushes, or
+rewrites history in your repository. That stays yours."). Three shapes a fix
+could take, none applied, none recommended over the others without a
+deliberate call:
+
+1. **Let redgear commit narrowly**, only between a task's own verification and
+   the next claim. Directly contradicts G6 and the README as currently
+   worded — would need both rewritten, not just the code.
+2. **Change what `scope_check` diffs against.** Every verified task's own
+   diff is already recorded (`proof/diff.patch`, per §2.3) — a later sibling
+   task's scope check could exclude paths that appear in an already-verified
+   predecessor's own recorded diff, instead of relying on git commit
+   boundaries at all. Keeps G6 exactly as worded; more invasive to
+   `verifier.py`'s notion of "the changed set," and needs care that it cannot
+   be used to smuggle an unverified change past scope by mimicking a prior
+   diff.
+3. **Make the loop pause for a human commit** between tasks, the way it
+   already pauses for `blocked`/`scope_insufficient`. Preserves every current
+   guarantee unchanged, but "continuous, unattended loop" (§1.2's stated
+   reason the product exists) stops being true for any plan with more than
+   one task — which is every real plan.
+
+`CLAUDE.md` §7.4 and G6 both carry a note pointing here now (search for "no
+commit between tasks" in that file). Whichever shape is chosen, it changes
+one of the seven guarantees or the loop's headline behaviour, so it needs a
+person to choose it, not a session to infer it from context.
 
 ---
 
@@ -1233,26 +1384,51 @@ frozen-file edit.
 
 ## 5. Open questions — need a human decision
 
-### `CLAUDE.md` §12.1 still names the superseded spec — needs an authorized edit
+### Nothing commits between tasks — a real multi-task `redgear run` cannot currently complete unattended
+
+The single biggest thing this file currently needs decided. Full account,
+root cause, and the evidence behind it are in §2 ("Nothing commits between
+tasks"); this entry is the pointer for anyone scanning specifically for what
+needs a human choice.
+
+**The short version:** G2's two-phase freeze checks a task's scope by diffing
+against `base_commit`. G6 says redgear never commits — "the human commits."
+Nothing currently plays that role inside an unattended `redgear run`, so a
+verified task's own output (real, uncommitted, sitting in the working tree)
+permanently looks like an out-of-scope write to the very next task that
+depends on it. Found by the first real run this project has ever made
+against a live agent CLI, on a plan with exactly two dependent tasks — as
+plain a case as the mechanism can produce, and the loop could not get past
+it. Confirmed by reading the real repo directly (`git log -- <file>` showed
+no commit ever added it), and independently confirmed by the real agent's own
+diagnosis on its third attempt, reaching the identical conclusion.
+
+**Three shapes a fix could take**, detailed in §2, none chosen: let redgear
+commit narrowly between tasks (rewrites G6 and the README's "never commits"
+claim); change what `scope_check` diffs against, using each verified task's
+own recorded `proof/diff.patch` instead of git commit boundaries (keeps G6,
+more invasive to `verifier.py`); or pause the loop for a human commit between
+tasks, the way it already pauses for `blocked` (keeps every current
+guarantee, but ends "continuous, unattended" as a true description for any
+plan with more than one task — which is every real plan). Each one changes
+either a headline guarantee or the loop's core behaviour, which is why this
+sits here rather than being decided in the session that found it.
+
+### `redgear/hashing.py`'s docstring still names the superseded spec
 
 T-0041 amended `spec.json` (§2: NFR-10, FR-12, the new hash `spec-97ee71`).
-`CLAUDE.md` §12.1's table still reads `spec-dd2914` and the old hash, and
-"10 out-of-scope boundaries" (now 11). `CLAUDE.md` is not in T-0041's writable
-scope (`pyproject.toml`, `.github/**`, `README.md`, `docs/**`), so this was
-found and reverted rather than fixed — see §2's T-0041 entry for the specific
-edit that was made and then backed out.
+`CLAUDE.md` §12.1's table had the same staleness (`spec-dd2914`, the old
+hash, "10 out-of-scope boundaries") and was fixed in the session that removed
+the README's "What's not done yet" section, once "update the living docs"
+gave explicit authorization to touch `CLAUDE.md`.
 
-The fix is mechanical (three values in one table row) and low-risk, but it
-touches the architectural contract, which this task was explicitly not
-authorized to edit. Needs an explicit go-ahead in a future session, or could
-reasonably be bundled into whatever session next touches `CLAUDE.md` for an
-unrelated reason.
-
-Same category, lower stakes: `redgear/hashing.py`'s module docstring
-illustrates the reference implementation with *"the recorded spec digest
-``sha256:dd2914...``"* — cosmetic (an example inside a comment, nothing reads
-or asserts it), but stale for the same reason, and `redgear/**` is likewise
-outside T-0041's scope. Worth folding into the same future edit.
+`redgear/hashing.py`'s module docstring still illustrates the reference
+implementation with *"the recorded spec digest ``sha256:dd2914...``"*.
+Cosmetic (an example inside a comment; nothing reads or asserts it), but
+stale for the same reason, and `redgear/**` was outside both the T-0041 task
+that introduced the staleness and the README-cleanup task that fixed
+`CLAUDE.md`. Worth folding into whatever session next touches `hashing.py`
+for an unrelated reason.
 
 ### `release.yml`'s GitHub/PyPI setup — still needs doing by hand
 

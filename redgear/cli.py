@@ -440,7 +440,7 @@ def run(
         if graph.state != "active":
             raise PlanUnreviewedError(
                 "the plan has not been approved; `redgear run` refuses a draft graph. "
-                "A human must review it first — the plan defines the tests.",
+                "A human must review it first: the plan defines the tests.",
                 detail={"state": graph.state, "graph": str(task_graph_path(root))},
             )
     except RedgearError as error:
@@ -458,7 +458,7 @@ def run(
         config=config,
         artifacts_root=redgear_dir(root) / "runs" / "agent",
     )
-    console.print(f"  agent CLI: [dim]{config.executable}[/dim] — {agent.version()}")
+    console.print(f"  agent CLI: [dim]{config.executable}[/dim] ({agent.version()})")
     console.print()
 
     try:
@@ -471,7 +471,7 @@ def run(
 
     console.print()
     console.print(
-        f"[bold]{outcome.reason}[/bold] — {outcome.iterations} iteration(s), "
+        f"[bold]{outcome.reason}[/bold]: {outcome.iterations} iteration(s), "
         f"{outcome.tasks_verified} verified, {outcome.tasks_escalated} escalated"
     )
     raise typer.Exit(outcome.exit_code)
@@ -492,7 +492,7 @@ def _dry_run(root: Path, *, only: str | None) -> None:
     console.print()
 
     if not composed:
-        console.print("[yellow]no ready task[/yellow] — nothing to compose.")
+        console.print("[yellow]no ready task[/yellow]: nothing to compose.")
         return
 
     for index, (task_id, prompt) in enumerate(composed, start=1):
@@ -555,7 +555,7 @@ def plan_command(
         raise _fail(error) from error
 
     console.print(
-        f"[green]plan written[/green] — {len(result.graph.nodes)} task(s), "
+        f"[green]plan written[/green]: {len(result.graph.nodes)} task(s), "
         f"spec {result.spec.spec_id}, after {result.attempts} attempt(s)"
     )
     console.print()
@@ -581,7 +581,7 @@ def approve(
     except RedgearError as error:
         raise _fail(error) from error
 
-    console.print(f"[green]approved[/green] by {by} — {len(graph.nodes)} task(s) now executable")
+    console.print(f"[green]approved[/green] by {by} ({len(graph.nodes)} task(s) now executable)")
     console.print(f"  spec: [dim]{graph.spec_hash}[/dim]")
     console.print("Editing the spec after this invalidates the approval (§3.3).")
 
@@ -616,7 +616,7 @@ def status(repo: RepoOption = None) -> None:
 
     escalated = [node.id for node in graph.nodes if node.state == "escalated"]
     if escalated:
-        console.print(f"[red]escalated:[/red] {', '.join(escalated)} — needs a human")
+        console.print(f"[red]escalated:[/red] {', '.join(escalated)} (needs a human)")
         raise typer.Exit(_STATUS_ESCALATED)
 
     if any(node.state in _CLAIMABLE_STATES for node in graph.nodes):
@@ -636,7 +636,7 @@ def stop(repo: RepoOption = None) -> None:
     """Ask a running loop to stop at the next iteration boundary."""
     root = repo or _repo_default()
     request_stop(root)
-    console.print(f"[yellow]stop requested[/yellow] — wrote {stop_path(root)}")
+    console.print(f"[yellow]stop requested[/yellow]: wrote {stop_path(root)}")
     console.print("The run finishes its current turn, releases its lease, and exits 0.")
 
 
@@ -715,7 +715,7 @@ def rebuild(repo: RepoOption = None) -> None:
 
     rebuilt_text = state_engine.render_graph(rebuilt)
     if rebuilt_text == on_disk_text:
-        console.print(f"[green]projection matches[/green] — {len(events)} event(s) replayed")
+        console.print(f"[green]projection matches[/green]: {len(events)} event(s) replayed")
         raise typer.Exit(0)
 
     # Divergence. Name the tasks, and change NOTHING (§1.5, G4).
