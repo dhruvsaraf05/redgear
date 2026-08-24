@@ -40,6 +40,7 @@ from redgear.errors import (
 from redgear.events import append as append_event
 from redgear.hashing import digest_map
 from redgear.paths import (
+    config_path,
     events_path,
     find_scope_overlaps,
     match_glob,
@@ -985,6 +986,33 @@ def scaffold(repo_root: Path) -> Path:
     events_path(repo_root).touch()
     (root / ".gitignore").write_text(_STATE_GITIGNORE, encoding="utf-8")
     return root
+
+
+def write_default_config(repo_root: Path, payload: Mapping[str, JsonValue]) -> Path:
+    """Write `.redgear/config.json`. Refuses to overwrite an existing one.
+
+    Here rather than in `cli.py` because §11.1 rule 4 makes this module the
+    only writer of `.redgear/`, and a config file is no exception. The caller
+    decides *what* the defaults are; this decides where they land and that an
+    existing file is never clobbered.
+    """
+    destination = config_path(repo_root)
+    if destination.exists():
+        return destination
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    encoded = (json.dumps(payload, indent=2, ensure_ascii=False) + "\n").encode("utf-8")
+
+    temp_path = destination.with_name(f"{destination.name}.{os.getpid()}.tmp")
+    try:
+        with temp_path.open("wb") as handle:
+            handle.write(encoded)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temp_path, destination)  # noqa: PTH105
+    except BaseException:
+        temp_path.unlink(missing_ok=True)
+        raise
+    return destination
 
 
 def plan_definition(graph: TaskGraph) -> TaskGraph:

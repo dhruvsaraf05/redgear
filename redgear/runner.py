@@ -191,22 +191,37 @@ def allowed_tools_for(task: TaskNode) -> list[str]:
 # ---------------------------------------------------------------------------
 # The Claude Code adapter (T-0035)
 #
-# Verified against: claude 2.1.229 on 2026-08-19 (Windows, MSIX/Claude-Desktop
+# Verified against: claude 2.1.237 on 2026-08-24 (Windows, MSIX/Claude-Desktop
 #   install, OAuth via the desktop app, bare=false).
 #
-#   docs/agents/claude-code.md's manual procedure was run against a real,
-#   authenticated CLI: three dispatches, real --output-format json stdout
-#   captured verbatim under tests/fixtures/claude_payloads/ (see that
-#   directory's README for the full account). This verifies the three shapes
-#   actually exercised -- an unauthenticated failure, a plain success with no
-#   --json-schema, and a success with --json-schema proving structured_output
-#   is a real, separate object from result -- not the CLI's full flag surface.
-#   --bare, --mcp-config and --max-spend-usd were not exercised this session.
+#   Re-verified when the installed CLI moved 2.1.229 -> 2.1.237. Every long
+#   flag documented by `claude --help` was enumerated and compared against
+#   what build_argv emits, then a real dispatch was run through this adapter
+#   (not a hand-built argv) to confirm the whole shape end to end:
+#   parse_ok=True, outcome=completed, structured_output a real object,
+#   num_turns=4, $0.28.
 #
-#   Nothing in build_argv needed to change: every flag already matched what
-#   the real CLI accepted. What changed was parsing-adjacent understanding,
-#   not the argv shape -- see the fixtures README and CLAUDE.md section 6.2's
-#   observed-field list.
+#   Two findings, one fixed here:
+#
+#   * `--max-spend-usd` DOES NOT EXIST. The CLI documents `--max-budget-usd`.
+#     This adapter had guessed the name and never emitted it, because nothing
+#     populated `per_turn_usd` -- a latent break that would have fired on the
+#     first run that set a spend cap. Fixed in build_argv below.
+#   * `--max-turns` is ACCEPTED but is no longer documented in 2.1.237's help
+#     (242 lines, enumerated). It is emitted on every dispatch, so its removal
+#     would break every turn. Confirmed working by real dispatch; treat it as
+#     the flag most likely to disappear next and re-check it on every version
+#     bump.
+#
+#   Still not exercised: --bare, --mcp-config, --max-budget-usd itself, and a
+#   blocked/scope_insufficient outcome from a real agent.
+#
+#   Earlier verification against 2.1.229 (2026-08-19) captured three real
+#   payloads verbatim under tests/fixtures/claude_payloads/ -- an
+#   unauthenticated failure, a plain success, and a success with --json-schema
+#   proving structured_output is a real, separate object from result. Those
+#   remain the parsing fixtures; see that directory's README and CLAUDE.md
+#   section 6.2's observed-field list.
 # ---------------------------------------------------------------------------
 
 
@@ -408,7 +423,12 @@ class ClaudeCodeRunner:
         if self.config.mcp_config is not None:
             argv.extend(["--mcp-config", self.config.mcp_config])
         if self.config.per_turn_usd is not None:
-            argv.extend(["--max-spend-usd", f"{self.config.per_turn_usd:.4f}"])
+            # `--max-budget-usd`, NOT `--max-spend-usd`. The latter was this
+            # adapter's guess and appears nowhere in the installed CLI's help;
+            # it was never caught because nothing ever populated
+            # `per_turn_usd`, so the flag was never emitted. Verified against
+            # 2.1.237's own `--help` output rather than against documentation.
+            argv.extend(["--max-budget-usd", f"{self.config.per_turn_usd:.4f}"])
 
         # Belt and braces: whatever configuration said, the result cannot carry
         # a forbidden flag (section 11.1 rule 3).

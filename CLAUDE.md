@@ -1187,7 +1187,13 @@ A file the agent created **outside** its scope is removed by the revert. It is a
 
 **`--no-verify` is used, deliberately, and users are told.** A target repository's pre-commit hook that reformats would mutate the tree *after* the proof was computed, so the commit would carry content no gate ever saw — G1 violated by accident, which is the worst way to violate it. And redgear has already run that repository's own configured lint and test commands as gates 3 and 4, so a hook re-running them can only deadlock the loop against a check that already passed. This is stated in §8.4 and in the README because "redgear bypasses your hooks" must be something a user reads rather than discovers.
 
-**Undoing a committed task.** A plain `git revert` of a task commit **conflicts**, and that is correct rather than a defect: each commit carries the appended event log, later commits append to the same file, so reverting one would have to delete log lines written on top of it — which §11.1 rule 5 forbids outright. The conflict is the audit trail refusing to lose history. The right way to undo a task is to restore its work paths (`git checkout <sha>^ -- <writable globs>`) and leave the log to record that the task was verified and later undone. Both statements remain true, which is the point of an append-only log.
+**Undoing a committed task — and why the conflict is deliberate.** A plain `git revert` of a task commit **conflicts on `.redgear/events.jsonl`**. This is a decided trade, not an unresolved gap: do not "fix" it.
+
+Each commit carries the event log as appended at that point, and every later commit appends to the same file — so reverting an earlier one would have to *delete* log lines that later entries were written on top of, which §11.1 rule 5 forbids outright. The conflict is the audit trail refusing to lose history.
+
+The alternative was considered and rejected. Excluding `events.jsonl` and `task_graph.json` from task commits would make each commit cleanly revertible, and would also put the work in one commit and the evidence for it in another — **the exact split-brain this design exists to close**. A commit containing verified work but not the proof that it was verified is precisely what redgear is built to prevent, and buying `git revert` ergonomics with it is a bad trade.
+
+The documented undo is therefore to restore the task's work paths — `git checkout <sha>^ -- <writable globs>` — and leave the log alone. The log then records that the task was verified and later undone, and both statements remain true, which is the point of an append-only log. The README promises one commit per verified task carrying its own proof; it deliberately does **not** promise single-command revert.
 
 ---
 

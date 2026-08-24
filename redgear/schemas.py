@@ -97,7 +97,17 @@ class Budget(Frozen):
     max_wall_clock_s: int = Field(default=7200, ge=60)
     max_consecutive_failures: int = Field(default=5, ge=1)
     max_turns_per_dispatch: int = Field(default=25, ge=1)
-    per_turn_usd: float | None = Field(default=None, ge=0)
+    #: Per-dispatch spend ceiling, passed to the agent CLI as its own cap.
+    #:
+    #: 1.00 rather than None, because "no cap at all" is the wrong default for
+    #: an unattended loop that spawns a paid subprocess. Calibrated against
+    #: measured cost rather than guessed: real dispatches have come in at
+    #: $0.065 (near-empty prompt), $0.218 and $0.281 (4 turns, one small file
+    #: read), and a full run averaged $0.27 across six. A 1.00 ceiling is
+    #: roughly 3.5x the observed per-dispatch cost -- ample headroom for a
+    #: genuinely large turn, while capping a two-task three-attempt worst case
+    #: near $6 instead of at infinity.
+    per_turn_usd: float | None = Field(default=1.00, ge=0)
     dispatch_timeout_s: int = Field(default=900, ge=30)
 
 
