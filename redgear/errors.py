@@ -147,6 +147,19 @@ class AlreadyInitializedError(RedgearError):
     code: ClassVar[str] = "E_ALREADY_INITIALIZED"
 
 
+class CommitFailedError(RedgearError):
+    """``git commit`` of a verified task failed (section 8.4).
+
+    An *environment* problem -- a rejected hook, a missing `user.email`, a
+    read-only or full disk -- not an engine bug, which is why it carries its
+    own code rather than reusing `E_HARNESS_ERROR`. The user's correct
+    response is to fix git's configuration and re-run; the verified work is
+    still in the tree and the proof is still on disk.
+    """
+
+    code: ClassVar[str] = "E_COMMIT_FAILED"
+
+
 class RunnerError(RedgearError):
     """The agent CLI integration is broken (section 6.4 rule 4).
 
@@ -211,6 +224,7 @@ ERROR_CODES: dict[str, type[RedgearError]] = {
         DirtyTreeError,
         NotAGitRepoError,
         AlreadyInitializedError,
+        CommitFailedError,
         RunnerError,
         RunnerTimeoutError,
         UnsafeHarnessCommandError,

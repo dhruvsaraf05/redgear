@@ -48,11 +48,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
-from redgear import gitctx, prompt_engine, state_engine, verifier
+from redgear import gitctx, prompt_engine, state_engine, vcs, verifier
 from redgear.budget import RunCounters, budget_exhausted, stop_requested
 from redgear.errors import DirtyTreeError, PlanUnreviewedError
 from redgear.locks import run_lock
-from redgear.paths import is_state_path
 from redgear.prompt_engine import PromptContext
 from redgear.runner import Runner, allowed_tools_for
 from redgear.schemas import (
@@ -159,6 +158,31 @@ def criteria_for(graph: TaskGraph, task: TaskNode) -> list[AcceptanceCriterion]:
     return inherited
 
 
+def _assert_clean_tree(repo_root: Path, *, when: str) -> None:
+    """Refuse to proceed on a tree that is dirty for reasons that are not ours.
+
+    Section 8.4 asserts this at run start. It is asserted again **before every
+    claim**, and that second call is what makes the revert safe rather than
+    reckless: if the tree is clean when a turn begins, then everything dirty
+    when it ends belongs to that turn, and restoring to HEAD is "undo this
+    turn" rather than "undo whatever the user had in progress".
+
+    So the correct response to unexpected dirt is to stop, loudly, and revert
+    nothing. Between tasks the tree is clean because a verified task was
+    committed and a rejected one was reverted; dirt here means something
+    outside this run wrote to the tree while it was running, and destroying
+    that is not redgear's call to make.
+    """
+    dirty = vcs.unexpected_dirt(repo_root)
+    if dirty:
+        paths: list[str] = []
+        paths.extend(dirty)
+        raise DirtyTreeError(
+            f"the working tree has uncommitted changes {when}; commit or stash them first",
+            detail={"paths": ", ".join(paths), "when": when},
+        )
+
+
 def _first_failure(proof: Proof) -> GateResult | None:
     """The first failed gate.
 
@@ -204,14 +228,7 @@ def run(
         # The run lock is already held, and it lives in `.redgear/`. Section
         # 8.4 is about *uncommitted user work*, not about redgear's own
         # bookkeeping -- without this exclusion no run could ever start.
-        dirty = [path for path in gitctx.dirty_paths(repo_root) if not is_state_path(path)]
-        if dirty:
-            paths: list[str] = []
-            paths.extend(dirty)
-            raise DirtyTreeError(
-                "the working tree has uncommitted changes; commit or stash them first",
-                detail={"paths": ", ".join(paths)},
-            )
+        _assert_clean_tree(repo_root, when="at run start")
 
         run_id = state_engine.start_run(repo_root, budget, actor=actor)
         counters = RunCounters(
@@ -255,6 +272,11 @@ def run(
                 # anything escalated means a human is holding the queue.
                 blocked_by_human = any(node.state == "escalated" for node in graph.nodes)
                 return finish("blocked" if blocked_by_human else "complete")
+
+            # The precondition the revert depends on. Checked here rather than
+            # only at run start, because "clean at run start" stops being the
+            # same statement as "clean now" the moment a second task claims.
+            _assert_clean_tree(repo_root, when=f"before claiming {selected.id}")
 
             graph = state_engine.claim_task(repo_root, graph, selected.id, actor=actor)
             task = _node(graph, selected.id)
@@ -339,7 +361,10 @@ def run(
             # captured now or it is gone by the time anything asks for it
             # later. FR-12 AC-4 needs it retrievable per attempt after the
             # fact, not only true in the instant the gate ran.
-            state_engine.persist_proof(
+            # Written BEFORE anything can revert the tree (see below): the
+            # patch is the only surviving record of a rejected attempt's work
+            # once the revert has discarded it.
+            proof_dir = state_engine.persist_proof(
                 repo_root,
                 run_id,
                 dispatch_iteration,
@@ -351,6 +376,19 @@ def run(
             if proof.verdict is Verdict.PASS:
                 graph = state_engine.mark_verified(
                     repo_root, graph, task.id, actor=actor, proof_id=proof_id
+                )
+                # Commit after `mark_verified`, so the commit contains the
+                # `task_verified` event that justifies it rather than trailing
+                # it by one. This is what advances HEAD, and advancing HEAD is
+                # what makes the *next* task's `base_commit` a real baseline.
+                _commit_verified(
+                    repo_root,
+                    task=_node(graph, task.id),
+                    attempt=attempt,
+                    run_id=run_id,
+                    proof=proof,
+                    proof_dir=proof_dir,
+                    actor=actor,
                 )
                 verified += 1
                 counters = counters.with_success()
@@ -392,9 +430,77 @@ def run(
                 )
                 escalated += 1
                 return finish("blocked")
+
+            # Reached only when the task WILL be tried again. The tree is
+            # restored so the next attempt starts from the same clean state
+            # the first one did, rather than inheriting half-finished work it
+            # did not write. An escalation never reaches here, which is the
+            # point: a task a human has to look at keeps its failure state,
+            # because reverting it would destroy the evidence they need.
+            _revert_tree(
+                repo_root,
+                task_id=task.id,
+                attempt=attempt,
+                reason="gate_failure",
+                actor=actor,
+            )
             # Otherwise fall through. The next iteration re-selects this task
             # and composes a corrective prompt from what was just recorded --
             # no branch, no special case.
+
+
+def _commit_verified(
+    repo_root: Path,
+    *,
+    task: TaskNode,
+    attempt: int,
+    run_id: str,
+    proof: Proof,
+    proof_dir: Path,
+    actor: str,
+) -> None:
+    """Commit one verified task and record it. Mechanism lives in ``vcs``."""
+    relative = proof_dir.relative_to(repo_root).as_posix()
+    result = vcs.commit_verified_task(
+        repo_root,
+        task=task,
+        attempt=attempt,
+        run_id=run_id,
+        proof=proof,
+        proof_dir=relative,
+    )
+    if result is None:  # pragma: no cover - the event log always changed
+        return
+    state_engine.record_commit(
+        repo_root,
+        task_id=task.id,
+        attempt=attempt,
+        commit_sha=result.sha,
+        subject=result.subject,
+        files_committed=len(result.files),
+        actor=actor,
+    )
+
+
+def _revert_tree(
+    repo_root: Path,
+    *,
+    task_id: str,
+    attempt: int,
+    reason: str,
+    actor: str,
+) -> None:
+    """Discard a failed attempt's writes and record what was discarded."""
+    result = vcs.revert_working_tree(repo_root)
+    state_engine.record_revert(
+        repo_root,
+        task_id=task_id,
+        attempt=attempt,
+        restored_to=result.restored_to,
+        paths_restored=result.paths,
+        reason=reason,
+        actor=actor,
+    )
 
 
 def _dispatch_with_one_retry(
@@ -444,6 +550,21 @@ def _dispatch_with_one_retry(
         )
         if turn.parse_ok:
             return turn, dispatch_iteration
+        if index + 1 < _MAX_PARSE_ATTEMPTS:
+            # An unparseable result carries no `changed_files` claim and no
+            # verdict, so whatever it wrote is unverifiable by construction.
+            # Letting it survive into the next try would put it in that try's
+            # diff and charge the agent for work it cannot see -- the same
+            # stale-baseline bug this module's commits exist to fix, one turn
+            # smaller. Not reverted after the LAST try: the run ends there as
+            # `runner_error`, and a human needs the wreckage to debug it.
+            _revert_tree(
+                repo_root,
+                task_id=task.id,
+                attempt=attempt,
+                reason="unparseable_result",
+                actor=actor,
+            )
     return None
 
 

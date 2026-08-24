@@ -370,6 +370,11 @@ _FREE_OUTCOMES = frozenset({"blocked", "scope_insufficient"})
 #: this is the placeholder it will absorb.
 _LEASE_SECONDS = 900
 
+#: Section 2.3. The two transient control files inside the state directory,
+#: and nothing else -- the log, the projection, the prompts and the proofs are
+#: all committed deliberately. See `scaffold`.
+_STATE_GITIGNORE = "locks/\nSTOP\n"
+
 
 def _utc_now() -> datetime:
     return datetime.now(tz=UTC)
@@ -857,6 +862,71 @@ def persist_proof(repo_root: Path, run_id: str, iteration: int, proof: Proof, *,
     return directory
 
 
+def record_commit(
+    repo_root: Path,
+    *,
+    task_id: str,
+    attempt: int,
+    commit_sha: str,
+    subject: str,
+    files_committed: int,
+    actor: str = "engine",
+) -> None:
+    """Append `task_committed`. No projection change -- a commit does not
+    move a task's state, it records what happened to the tree after one did.
+
+    Appended *after* the commit, since the sha does not exist before it. That
+    puts this record in the *next* commit rather than the one it describes;
+    see ``TaskCommittedEvent`` for why that is inherent rather than a bug.
+    """
+    append_event(
+        events_path(repo_root),
+        {
+            "event": "task_committed",
+            "ts": _stamp(_utc_now()),
+            "actor": actor,
+            "task_id": task_id,
+            "attempt": attempt,
+            "commit_sha": commit_sha,
+            "subject": subject,
+            "files_committed": files_committed,
+        },
+    )
+
+
+def record_revert(
+    repo_root: Path,
+    *,
+    task_id: str,
+    attempt: int,
+    restored_to: str,
+    paths_restored: Sequence[str],
+    reason: str,
+    actor: str = "engine",
+) -> None:
+    """Append `working_tree_reverted`.
+
+    Every discarded path is named, not counted. This is the one destructive
+    thing redgear does, and a destructive act that cannot be reviewed after
+    the fact is not auditable.
+    """
+    paths: list[JsonValue] = []
+    paths.extend(paths_restored)
+    append_event(
+        events_path(repo_root),
+        {
+            "event": "working_tree_reverted",
+            "ts": _stamp(_utc_now()),
+            "actor": actor,
+            "task_id": task_id,
+            "attempt": attempt,
+            "restored_to": restored_to,
+            "paths_restored": paths,
+            "reason": reason,
+        },
+    )
+
+
 def record_turn(
     repo_root: Path,
     *,
@@ -897,8 +967,12 @@ def scaffold(repo_root: Path) -> Path:
     a live directory would overwrite the event log, which is the one artifact
     redgear exists to protect.
 
-    No ``.gitignore`` entry is written. The whole directory is committed to
-    the target repo on purpose -- it *is* the audit trail (section 2.3).
+    The directory is committed to the target repo on purpose -- it *is* the
+    audit trail (section 2.3) -- so nothing ignores it as a whole. A nested
+    ``.redgear/.gitignore`` names exactly two paths, and both are transient
+    control files rather than records: ``locks/`` holds a lock that is live
+    only while a run is, and ``STOP`` is a sentinel. Committing either would
+    put a stale lock or a spurious brake into every later checkout.
     """
     root = redgear_dir(repo_root)
     if root.exists():
@@ -909,6 +983,7 @@ def scaffold(repo_root: Path) -> Path:
     for child in ("spec", "spec/history", "adrs", "runs", "locks"):
         (root / child).mkdir(parents=True, exist_ok=True)
     events_path(repo_root).touch()
+    (root / ".gitignore").write_text(_STATE_GITIGNORE, encoding="utf-8")
     return root
 
 

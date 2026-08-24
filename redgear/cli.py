@@ -41,7 +41,7 @@ import uvicorn
 from rich.console import Console
 from rich.table import Table
 from rich.text import Text
-from redgear import __version__, gitctx, orchestrator, planner, state_engine, verifier
+from redgear import __version__, gitctx, orchestrator, planner, state_engine, vcs, verifier
 from redgear.api.app import create_app
 from redgear.budget import request_stop
 from redgear.errors import JsonValue, PlanUnreviewedError, RedgearError
@@ -614,9 +614,26 @@ def status(repo: RepoOption = None) -> None:
         )
     console.print(table)
 
-    escalated = [node.id for node in graph.nodes if node.state == "escalated"]
+    escalated = [node for node in graph.nodes if node.state == "escalated"]
     if escalated:
-        console.print(f"[red]escalated:[/red] {', '.join(escalated)} (needs a human)")
+        ids = ", ".join(node.id for node in escalated)
+        console.print(f"[red]escalated:[/red] {ids} (needs a human)")
+        for node in escalated:
+            if node.escalation is not None:
+                console.print(f"    {node.id}: {node.escalation.reason}")
+        # An escalated task keeps its failure state on purpose (section 7.6):
+        # reverting would destroy the evidence a human needs to diagnose it.
+        # But that leaves a dirty tree, and the next run will refuse to start
+        # on it -- so say so here rather than let them meet E_DIRTY_TREE with
+        # no idea which changes are safe to discard.
+        dirty = vcs.unexpected_dirt(root)
+        if dirty:
+            console.print()
+            console.print(
+                f"    working tree carries {len(dirty)} uncommitted path(s) from the failed attempt"
+            )
+            console.print("    inspect the proof, then discard with:")
+            console.print("      [dim]git restore --staged --worktree . && git clean -fd[/dim]")
         raise typer.Exit(_STATUS_ESCALATED)
 
     if any(node.state in _CLAIMABLE_STATES for node in graph.nodes):

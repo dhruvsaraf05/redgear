@@ -7,15 +7,15 @@ derivable from the contract, traps already hit, and open questions.
 Keep it **current**, not cumulative. Update entries in place; delete what stops
 being true. This is not a changelog — git history is the changelog.
 
-*Last updated: after the first real, live `redgear run` against an actual
-Claude Code CLI — not `redgear`'s own repository, a throwaway two-task
-project. It found a real bug in `verifier.py` on the first attempt (fixed,
-regression-tested, reran clean) and a second, deeper structural gap on the
-second attempt (found, not fixed — needs a human decision, §5). Before that:
-a cosmetic README pass (em dashes removed throughout, the "What's not done
-yet" section removed by explicit request), and T-0041 (packaging and release
-readiness) — the last task in the graph. Every module in §2.2 exists except
-the Next.js UI (T-0040, deliberately deferred, see §2).*
+*Last updated: after resolving the commit-boundary gap — the structural
+defect the first real live run found and could not get past. **G6 was
+amended: redgear now commits verified work to the local repository.** New
+module `redgear/vcs.py` (the only git mutator), two new event types, a
+twentieth error code, and a per-claim clean-tree assertion. Before that: the
+first real `redgear run` against an actual Claude Code CLI, which found and
+fixed a `verifier.py` aggregate-verdict bug and found this one; a cosmetic
+README pass; and T-0041 (packaging and release readiness). Every module in
+§2.2 exists except the Next.js UI (T-0040, deliberately deferred, see §2).*
 
 ---
 
@@ -39,17 +39,18 @@ section in the README — see §2's "What's not done yet" entry for why.
 | | |
 | --- | --- |
 | Main is | **green** |
-| Test suite | **403 passed, 1 skipped** (was 402 — one new regression test, §2) |
+| Test suite | **421 passed, 1 skipped, 1 failing** — the one failure is `test_errors.py`'s `len(documented) == 19`, a documentation-mirror count that must become `20` now that §4.7 declares `E_COMMIT_FAILED`. A frozen file; **awaiting explicit authorization**, not worked around. Every other test passes, including 19 new ones (`test_vcs.py`, `test_commit_boundary.py`). |
 | Suite runtime | **Unreliable on this machine — measured 83 s to 463 s for the same tree.** Trust CI, not a Windows laptop. See §5. |
 | The skip | `test_gitleaks_clean` — the `gitleaks` binary is not on PATH locally. Its pre-commit config is still asserted. CI runs the real scan. |
 | Coverage | **90.35%** (floor 85%) |
-| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter, verified against a real CLI**), `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/app.py` |
+| Modules built | `schemas`, `errors`, `paths`, `hashing`, `redact`, `events`, `state_engine`, `locks`, `budget`, `gitctx`, `vcs` (**new — the only git mutator**), `verifier` (**all six gates**), `runner` (protocol **+ Claude Code adapter, verified against a real CLI**), `prompt_engine`, `orchestrator`, `cli`, `planner`, `api/app.py` |
 | Test rig | `tests/fake_runner/` — 12 declarative scenarios, no subprocess |
 | Golden prompts | `tests/snapshots/` — 5 files. A prompt change is now a reviewable diff. |
 | Not built | `ui/` (T-0040, deliberately deferred post-1.0 — see above) |
 | Package | Builds clean (`python -m build`), installs from wheel with a working `redgear` entry point, manifest has nothing sensitive. See §2. |
 | Spec | `spec-97ee71` (supersedes `spec-dd2914`, history in `.redgear/spec/history/`) — NFR-10 now says 3.12, FR-12 now names the deferred UI. See §2. |
-| **First real run** | `redgear run` against a real Claude Code CLI, a throwaway two-task project, real money spent (~$1.60, 6 dispatches). Found and fixed one real bug (`verifier.py`'s aggregate verdict, §2); found and did **not** fix a second, deeper one (no commit happens between a verified task and the next task's claim, so a real multi-task run cannot currently complete unattended — §5, "Nothing commits between tasks"). |
+| **First real run** | `redgear run` against a real Claude Code CLI, a throwaway two-task project, real money spent (~$1.60, 6 dispatches). Found two real bugs: `verifier.py`'s aggregate verdict (fixed that session) and the commit-boundary gap (**fixed now**, §2). |
+| **Commit boundary** | **Resolved.** G6 amended, `vcs.py` added, and a two-task plan now completes unattended — pinned by `tests/test_commit_boundary.py`, which reproduces the original failure shape with the real six-gate pipeline. Not yet re-run against a live agent CLI; that is the next step and the e2e repo is still parked mid-failure for it. |
 | Crossover | **Still not reached, and now known to need more than an event log.** No approved plan, no event log behind the 40 done tasks (T-0040 stays deliberately deferred, not counted as done) — see §2's "self-hosting claim" entry and §5. Separately, the first real run just showed that *even with* an event log and an approved plan, today's loop cannot complete two real, genuinely dependent tasks back to back without a human committing between them — see §5, same entry as above. That gap was invisible until this session because redgear's own bootstrap (T-0001–T-0041) was hand-driven, with a human committing between every pair by hand (§4.6.1); nothing had ever asked the automated loop to do that step itself. |
 
 **Gates 3–6 need inputs the verifier cannot invent** — a `HarnessConfig` (§7.3:
@@ -826,7 +827,58 @@ over cleanly is the honest path, not hand-editing state). T-0001 verified on
 its first real attempt this time, all six gates recorded correctly. See the
 next entry for what happened to T-0002.
 
-### Nothing commits between tasks — the first real multi-task run could not complete, and this needs a human decision
+### Three traps found while implementing the commit boundary
+
+Each cost real debugging time and none was predictable from the design.
+
+**A `:(exclude)` pathspec naming a gitignored path makes `git add` fail
+outright.** The first design used both `.redgear/.gitignore` (for `locks/`
+and `STOP`) *and* `git add -A -- . ':(exclude).redgear/locks'`. Together they
+break every commit: git reports "The following paths are ignored by one of
+your .gitignore files … use -f" and exits 1. The ignore rule covers the
+untracked case on its own; the already-tracked case (which is real — the e2e
+repo has a committed `run.lock`) is handled by staging everything and then
+unstaging the exceptions.
+
+**`git diff --cached` does not show intent-to-add entries.** An `-N` file is
+in the index but absent from the cached diff, which is precisely why it is
+easy to miss that `git clean` cannot see it either. `git ls-files` is what
+shows it.
+
+**Reverting a task commit conflicts on `events.jsonl`, and that is correct.**
+Each commit carries the appended log; later commits append to the same file;
+so `git revert` of an earlier one has to *delete* lines that later entries
+were written on top of — which §11.1 rule 5 forbids outright. The conflict is
+the audit trail refusing to lose history. The right way to undo a task is
+`git checkout <sha>^ -- <writable globs>`, leaving the log to record that the
+task was verified and later undone. **Both statements stay true, which is the
+point of an append-only log** — but it does mean the README could not promise
+"revert with one command", and it does not.
+
+### The spec's `out_of_scope` line on auto-committing — read, not amended
+
+`.redgear/spec/spec.json` says *"Auto-committing, pushing, opening pull
+requests, merging, or deploying **on behalf of the user**"*. G6's amendment
+sits against that line, and the deliberate decision was **not to amend the
+spec.**
+
+The reading: "on behalf of the user" most naturally scopes the whole list to
+operations against **shared history** — it is the same register as pull
+requests, merging and deploying, none of which are local. A local commit of
+work redgear itself verified, in a repository the user explicitly pointed it
+at and which it never pushes, is defensible as outside that boundary.
+
+That is a judgement call and is recorded as one rather than asserted as
+certain. What tipped it is the cost of the alternative: amending the spec
+means a new content hash, `spec/history/`, all 41 nodes rewritten, `CLAUDE.md`
+§12.1, and an authorized `test_hashing.py` edit — the full §3.5 procedure — to
+clarify a line that arguably already permits this.
+
+**If it later reads as a stretch, amend then** — and bundle it with the two
+known defects below (`mark_verified`'s `attempt` and `gates_passed`), so one
+hash change fixes three things instead of three hash changes fixing one each.
+
+### Nothing commits between tasks — RESOLVED, see §2
 
 The rerun above got further, but T-0002 (the dependent `implementation` task)
 escalated after three real attempts, on `scope_check` every time, over
@@ -862,33 +914,68 @@ when green."* That instruction was written for the human-driven manual phase.
 Nothing says who or what performs the equivalent step inside an unattended
 `redgear run`, and the answer, checked directly, is: nobody does.
 
-**This is not a bug to quietly patch — it interacts with a headline
-guarantee (G6) and a marketed README claim** ("It never commits, pushes, or
-rewrites history in your repository. That stays yours."). Three shapes a fix
-could take, none applied, none recommended over the others without a
-deliberate call:
+**RESOLVED: option 1, with G6 reworded.** The decision, made explicitly by
+the human: G6 was never actually about commits, it was about *destructive*
+git operations, and the original wording conflated the two. A local commit
+destroys nothing and is trivially undoable. The amended guarantee:
 
-1. **Let redgear commit narrowly**, only between a task's own verification and
-   the next claim. Directly contradicts G6 and the README as currently
-   worded — would need both rewritten, not just the code.
-2. **Change what `scope_check` diffs against.** Every verified task's own
-   diff is already recorded (`proof/diff.patch`, per §2.3) — a later sibling
-   task's scope check could exclude paths that appear in an already-verified
-   predecessor's own recorded diff, instead of relying on git commit
-   boundaries at all. Keeps G6 exactly as worded; more invasive to
-   `verifier.py`'s notion of "the changed set," and needs care that it cannot
-   be used to smuggle an unverified change past scope by mimicking a prior
-   diff.
-3. **Make the loop pause for a human commit** between tasks, the way it
-   already pauses for `blocked`/`scope_insufficient`. Preserves every current
-   guarantee unchanged, but "continuous, unattended loop" (§1.2's stated
-   reason the product exists) stops being true for any plan with more than
-   one task — which is every real plan.
+> redgear commits verified work to the local repository and does nothing else
+> to git. It never pushes, rebases, resets, force-updates, cherry-picks, or
+> rewrites history. Every commit is one verified task and is trivially
+> undoable.
 
-`CLAUDE.md` §7.4 and G6 both carry a note pointing here now (search for "no
-commit between tasks" in that file). Whichever shape is chosen, it changes
-one of the seven guarantees or the loop's headline behaviour, so it needs a
-person to choose it, not a session to infer it from context.
+That is a more precise version of the same protection, not a retreat. The two
+alternatives — changing what `scope_check` diffs against, or pausing the loop
+for a human commit — were rejected: the first is more invasive to
+`verifier.py` and needs care that a mimicked diff cannot smuggle an unverified
+change past scope; the second ends "continuous, unattended" as a true
+description for any plan with more than one task, which is every real plan.
+
+**Three behaviours, decided together**, because each one's safety depends on
+the other two. Implemented in `redgear/vcs.py` and documented normatively in
+`CLAUDE.md` §7.6:
+
+1. **On verification: commit.** One commit per verified task, immediately
+   after the proof is written and `task_verified` is appended.
+2. **On rejection with attempts remaining: revert the tree to HEAD.**
+   Otherwise attempt 2 starts on top of attempt 1's failed code and the agent
+   inherits half-finished work it did not write. Each attempt becomes an
+   independent, auditable experiment.
+3. **On escalation: commit nothing, revert nothing.** A human has to diagnose
+   it; reverting destroys the evidence and committing enshrines broken work.
+   `redgear status` now names the dirty paths and prints the discard command.
+
+**The knock-on, checked rather than assumed.** If every attempt reverts on
+rejection and escalation always ends the run, then every dispatch begins from
+a clean tree at a known commit, `base_commit` is a true baseline again, and
+option 2's snapshot machinery is unnecessary. That reasoning holds — the
+inductive step is real, and the reason escalation cannot break it is that
+*every* escalation path in `orchestrator.run` returns `finish("blocked")`
+immediately, so there is never a next dispatch to inherit the dirty tree.
+
+**But it had two holes**, and one was open in the code:
+
+- **The parse-failure retry.** `_dispatch_with_one_retry` dispatches twice
+  with nothing in between, so dispatch 1 could write files, fail to parse, and
+  leave them in dispatch 2's diff. Now reverted between attempts (reason
+  `unparseable_result`), on the grounds that an unparseable result carries no
+  `changed_files` claim and no verdict, so that work is unverifiable by
+  construction. Not reverted after the *last* try: the run ends there as
+  `runner_error` and a human needs the wreckage.
+- **A human editing during a run.** §8.4 only checked at run start. The tree
+  is now asserted clean **before every claim**, and unexpected dirt raises
+  `E_DIRTY_TREE` and reverts *nothing*. This is what licenses the revert at
+  all: if the tree is clean when a turn begins, everything dirty when it ends
+  belongs to that turn. It also closes the §7.4 documentation gap a previous
+  session recorded but did not act on.
+
+**What the revert deliberately does not bound itself to.** Scoping it to the
+task's `writable_globs` was considered and rejected: an out-of-scope write is
+*by definition* outside those globs, so a scope-bounded revert would leave
+behind exactly the poison it exists to remove. A file the agent created
+outside its scope is removed, and the evidence survives because
+`persist_proof` (including `diff.patch`) runs **before** the revert. That
+ordering is load-bearing and is asserted in `test_commit_boundary.py`.
 
 ---
 
@@ -1378,18 +1465,42 @@ addition for this pair (Fix 1, `fastapi`/`uvicorn`/`httpx`) happened *before*
 Phase 1 began, under separate, explicit authorization — not as a Phase-2
 frozen-file edit.
 
+| `tests/test_events.py` | Two payloads added (`task_committed`, `working_tree_reverted`); the round-trip count `14` → `16` | *Consequent* edit of the authorized §3.6 amendment (G6's commit boundary). Without it the two new types would be the only ones in the taxonomy with no round-trip coverage, and the test's own docstring ("All 14 section 3.6 types") would be false. Explicitly authorized in-session. |
+| `tests/test_orchestrator.py` | Comment in `test_termination_reasons_and_exit_codes` (comment only, no assertion touched) | It read that a second run "would refuse to start on the tree the first one left dirty". No longer true: a completed run now commits its work and leaves the tree clean. The assertions were and remain correct. Explicitly authorized in-session. |
 | `tests/test_hashing.py` | `REAL_SPEC_HASH`/`REAL_SPEC_ID` constants updated to the new spec's values (`spec-97ee71`) | Direct, mechanical consequence of the T-0041 spec amendment (§2) — the same *consequent-edit* category as the `test_errors.py` count above, not a defect correction. The module's own docstring states the tests exist to track the *real* `spec.json` on disk, not a frozen historical snapshot, so leaving the constants at the superseded value would have made the authorized amendment look like a bug rather than reflecting it. |
 
 ---
 
 ## 5. Open questions — need a human decision
 
+### `tests/test_errors.py`'s code count must go 19 → 20 — awaiting authorization
+
+**The one thing blocking a green suite.** `test_all_codes_have_classes`
+asserts `len(documented) == 19`, parsed live from `CLAUDE.md` §4.7. §4.7 now
+declares twenty codes (`E_COMMIT_FAILED` was added by explicit instruction),
+so the assertion fails on the number alone. The registry-subset assertion in
+the same test already passes.
+
+This is a one-line *consequent* edit with two exact precedents in §4 above:
+the same constant went `20` → `19` at T-0031 when `E_NO_READY_TASK` was
+struck, and `test_hashing.py`'s hash constants moved at T-0041. The test's own
+comment says it: *"a parse sanity check on the table, not a cap on the
+taxonomy — update it with the table."* Its docstring still reads "the
+normative, closed table of twenty codes", which was true before T-0031 and is
+true again now.
+
+**Not edited**, because the session's authorization named two frozen files and
+this was not one of them. It needs one word.
+
 ### Nothing commits between tasks — a real multi-task `redgear run` cannot currently complete unattended
 
-The single biggest thing this file currently needs decided. Full account,
-root cause, and the evidence behind it are in §2 ("Nothing commits between
-tasks"); this entry is the pointer for anyone scanning specifically for what
-needs a human choice.
+**Resolved.** G6 was amended, `redgear/vcs.py` added, and a two-task plan now
+completes unattended. The full account — the decision, the three behaviours,
+the knock-on check and its two holes — is in §2. Kept as a pointer because
+this was the file's biggest open question for two sessions and a reader
+scanning §5 for it should find where it went.
+
+The historical account below is left for context.
 
 **The short version:** G2's two-phase freeze checks a task's scope by diffing
 against `base_commit`. G6 says redgear never commits — "the human commits."
@@ -1601,6 +1712,39 @@ Both are in §4.7. `locks.py` raises `RunLockedError` for a wrong-token release
 *event*, not an error, so neither class exists yet. Consistent with the
 "registry grows as raisers land" rule; still nobody has needed either badly
 enough to add it.
+
+### `task_verified.gates_passed` is a hardcoded list and says every gate passed on every task — a defect
+
+`state_engine.mark_verified` writes `gates_passed = [gate.value for gate in
+GateName]`. That is not derived from the proof; it is the full six-gate
+enumeration, unconditionally, for every task that ever verifies.
+
+**So the event log currently asserts that all six gates passed on every
+verified task, including tasks where a gate was legitimately skipped.** Every
+`test_authoring` and `scaffold` task skips `coverage_delta` by design (§4.5,
+§7.2) — and for those, the log says it passed. It did not; it did not run.
+
+For a project whose entire pitch is "an unverified claim is worthless", the
+audit trail carrying a false statement about verification is a defect and not
+a quirk. It is the same shape as the `attempt` off-by-one below (a
+`mark_verified` field written from something other than the fact it names),
+found the same way — while building something that needed to read it — and it
+wants the same fix window.
+
+Found while designing the commit message (§2). The commit message deliberately
+routes **around** this: `vcs.build_commit_message` derives its `gates:` line
+from the `Proof`, lists only gates whose status is actually `PASSED`, and
+states a skipped one on its own `skipped:` line. So the commit message tells
+the truth even though the event does not, and a test
+(`test_commit_message_states_a_skipped_gate_rather_than_padding_it`) pins that.
+Not fixed at the source: `state_engine.py` was outside this change's scope,
+and a fix changes what every future replay of an already-recorded log reports
+for past verified tasks — the same live concern the `attempt` fix carries.
+
+**Recommendation: fix both together**, taking the real gate list and the real
+attempt number as parameters from `orchestrator.run`, which has both in scope
+at the call site. Checked directly: no frozen test in `test_state_write.py`
+pins either value, so neither needs an authorized frozen edit.
 
 ### `mark_verified`'s `task_verified.attempt` field is wrong — fix, or leave documented?
 

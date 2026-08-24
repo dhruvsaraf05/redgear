@@ -172,10 +172,12 @@ An unattended loop that spawns an agent with file-write and shell access is a ge
 - **`--dangerously-skip-permissions` is forbidden.** Always an explicit `--allowedTools` allowlist derived from the task's scope.
 - The loop checks for `.redgear/STOP` before every iteration. If present, it finishes nothing further, releases the lease, and exits 0. `redgear stop` creates the file.
 - SIGINT and SIGTERM abort the current turn, terminate the agent process tree, write a `run_aborted` event, and exit — never leaving an orphaned lock.
-- redgear **never commits, pushes, or rewrites git history** in the target repository. It reads git state. The human commits.
-- A run refuses to start on a dirty working tree. Without a clean baseline the diff audit is fiction.
+- **redgear commits verified work to the local repository and does nothing else to git.** It never pushes, rebases, resets, force-updates, cherry-picks, or rewrites history. Every commit is one verified task and is trivially undoable.
+- A run refuses to start on a dirty working tree, **and refuses to continue on one at every claim** (§8.4). Without a clean baseline the diff audit is fiction.
 
-> **Open gap, found by the first real run against a live agent CLI, not yet resolved (`docs/PROGRESS.md` §5, "Nothing commits between tasks").** "The human commits" assumes a human is present to do it. Inside an unattended `redgear run` across more than one task, nobody is. A verified task's own output sits uncommitted in the working tree, `git rev-parse HEAD` never moves, and the *next* task's `scope_check` (§7.4) diffs against that same stale baseline — so the first task's legitimate, already-verified output looks like an out-of-scope write to the second task, permanently, regardless of what the second task's agent does. Confirmed directly: a real two-task plan run end to end could not get past this. This is a genuine tension between this guarantee and G2's freeze mechanism, not a bug in either one alone, and every fix shape changes either this guarantee's wording or the loop's "continuous, unattended" claim in §1.2 — see `docs/PROGRESS.md` for the options. Do not resolve this by having redgear commit without reading that entry first.
+> **Why this guarantee was amended, and what it protects.** It originally read "never commits, pushes, or rewrites git history… The human commits." That conflated two different things: *destructive* git operations, which are genuinely dangerous, and a local commit, which destroys nothing and is trivially undoable. The conflation had a concrete cost. `scope_check` (§7.4) diffs the working tree against the claim's `base_commit`; if nothing commits between tasks, `HEAD` never moves, and task N+1's diff contains task N's already-verified output — so a verified predecessor looks like an out-of-scope write to its own dependent, permanently, whatever the second agent does. A real two-task plan run against a live agent CLI could not get past this. "The human commits" was written for the human-driven bootstrap phase (§4.6.1) and silently assumed a human was present; inside an unattended run, nobody was. The amended guarantee is a **more precise** version of the same protection, not a retreat: shared history is still untouchable, and what redgear may now do to a local repository is exactly what makes the audit it performs meaningful.
+
+**The revert — the one destructive thing redgear does.** On a gate failure with attempts remaining, the working tree is restored to `HEAD` before the retry dispatches, so each attempt is an independent experiment rather than one accreting on the last. It is bounded by a precondition rather than by care: the tree is asserted clean before every claim, so everything dirty at rejection time was written during that turn, and restoring to `HEAD` means "undo this turn" rather than "undo the tree". `.redgear/` is excluded unconditionally (reverting the event log would destroy the audit trail) and ignored files are never removed. **On escalation nothing is committed and nothing is reverted** — a task a human has to look at keeps its failure state, because reverting it would destroy the evidence they need. `redgear status` says so and names the command to discard it.
 
 #### G7 — Untrusted input containment
 
@@ -198,7 +200,7 @@ Do not build these. If a task seems to require one, say so rather than implement
 - Multi-language harness support. **Python only** (pytest, ruff, coverage.py).
 - Parallel agents. One task, one turn, one process, sequentially. Concurrency is Phase 2 and needs git worktrees.
 - Remote or hosted execution. Local repository, local subprocess.
-- Auto-commit, auto-PR, auto-merge, auto-deploy. See G6.
+- Auto-PR, auto-merge, auto-deploy, and any push to a remote. See G6. (Local commits of *verified* work are in scope, and are the mechanism that makes `base_commit` a real baseline — G6 again.)
 - Any LLM client code, prompt-to-API call, or model routing. See G5.
 - Sandboxing beyond subprocess isolation and `--allowedTools` (no containers, no seccomp).
 - Fully unattended planning. The Phase 1 plan is **always** reviewed by a human before the loop runs. See §3.3.
@@ -257,6 +259,7 @@ redgear/
 │   ├── events.py                   # event union, append(), replay()
 │   ├── hashing.py                  # canonical JSON, spec hash, file digests
 │   ├── gitctx.py                   # read-only git interrogation
+│   ├── vcs.py                      # THE ONLY module that mutates git. §7.6
 │   ├── locks.py                    # run lock, task lease
 │   ├── budget.py                   # G6 caps, STOP sentinel, signal handling
 │   ├── redact.py                   # G5 secret redaction for logs and events
@@ -290,7 +293,8 @@ redgear/
 - `runner.py` is the only module that spawns the agent CLI. It exposes a `Runner` protocol so a fake can be substituted wholesale (§10.5).
 - `state_engine.py` is the only module that opens `.redgear/*` for writing.
 - `schemas.py` imports nothing from the rest of the package.
-- `gitctx.py` never mutates the repository. The sole write-adjacent call permitted is `git add -N` (intent-to-add), justified in §7.4.
+- `gitctx.py` never mutates the repository. The sole write-adjacent call permitted is `git add -N` (intent-to-add), justified in §7.4. This rule is unchanged by G6's amendment and is enforced structurally: a frozen test greps the module's source for `commit`, `reset`, `checkout`, `merge` and `push` and fails if any appears.
+- `vcs.py` is the only module that mutates git, and does exactly two things: commit one verified task, and restore the working tree to `HEAD` after a failed attempt (§7.6). One privileged writer per mutable resource, the same shape as `runner.py` being the only spawner and `state_engine.py` the only `.redgear/` writer — so "what can change this?" always has a one-file answer. Plain functions, no protocol: there is no second implementation, and §11.3 forbids inventing a seam before one exists.
 
 ### 2.3 Runtime layout of `.redgear/`
 
@@ -329,7 +333,7 @@ Created by `redgear init` in a **target repository**. Committed to that repo's g
     └── T-0042.lock                 # active task lease
 ```
 
-`redgear init` writes no `.gitignore` entry for `.redgear/`. The whole directory is the point.
+`redgear init` never ignores `.redgear/` itself — the whole directory is the point, and it is committed alongside the work it audits (§7.6). It does write a nested `.redgear/.gitignore` naming exactly two paths, and both are transient control files rather than records: `locks/`, whose lock is live only while a run is, and `STOP`, which is a brake. Committing either would put a stale lock or a spurious brake into every later checkout.
 
 ### 2.4 Agent CLI adapters
 
@@ -456,9 +460,15 @@ addressing.
 
 ### 3.6 Event taxonomy — normative and closed
 
-Fourteen event types. **This list is closed.** Adding one is an ADR-worthy
+Sixteen event types. **This list is closed.** Adding one is an ADR-worthy
 change, because `events.py` (T-0010) and the state engine write path (T-0014)
 both require it to be exhaustive rather than plausible.
+
+*(It was fourteen until G6 was amended to let redgear commit verified work.
+`task_committed` and `working_tree_reverted` were added then — the two things
+redgear now does to a repository that nothing previously recorded. A
+destructive act that leaves no record is not auditable, which is the whole
+reason the revert needed an event and not merely a log line.)*
 
 Every event carries `ts` (RFC 3339 UTC, `Z` suffix), `seq` (gapless monotonic),
 and `actor` (agent id, `"human"`, or `"engine"`).
@@ -489,6 +499,8 @@ and `actor` (agent id, `"human"`, or `"engine"`).
 | `task_verified` | Every gate passed | `task_id`, `attempt`, `proof_id`, `spec_hash`, `gates_passed`, `duration_ms` |
 | `task_rejected` | A gate failed with attempts remaining | `task_id`, `attempt`, `proof_id`, `failed_gates`, `attempts_remaining`, `summary` |
 | `task_escalated` | Blocked, scope-insufficient, or attempts exhausted | `task_id`, `reason`, `category` (nullable), `detail`, `attempted` |
+| `task_committed` | A verified task's work is committed (§7.6) | `task_id`, `attempt`, `commit_sha`, `subject`, `files_committed` |
+| `working_tree_reverted` | A failed attempt's writes are discarded (§7.6) | `task_id`, `attempt`, `restored_to`, `paths_restored`, `reason` (`gate_failure` \| `unparseable_result`) |
 | `lease_expired` | A lease is reaped (§8.3) | `task_id`, `attempt`, `claim_token`, `counted_as_attempt` |
 
 **Decisions**
@@ -499,6 +511,13 @@ and `actor` (agent id, `"human"`, or `"engine"`).
 
 `prompt_sha256` on `prompt_dispatched` is what makes G4 verifiable rather than
 asserted: the persisted prompt file can be re-hashed and matched against the log.
+
+`task_committed` is necessarily appended **after** the commit it describes —
+the sha does not exist before it — so that record lands in the *next* commit
+rather than its own. A run therefore ends with one trailing uncommitted event.
+That is inherent to recording a fact about an object the fact depends on, not
+a bug, and it is harmless: `.redgear/` is excluded from the dirty-tree check,
+so it never blocks the next run.
 
 There is deliberately **no scope-change event pair**. In the loop architecture an
 under-scoped task returns `scope_insufficient` and escalates (§5.3); the human
@@ -538,6 +557,7 @@ def run(repo: Path, budget: Budget) -> RunOutcome:
                 # §4.3 terminations; exhaustion is not an error (see §4.7).
                 return state.end_run(session, "complete" if nothing_escalated else "blocked")
 
+            assert_clean_tree(repo)                     # §7.6: what makes the revert safe
             lease = state.claim(task, session)          # base_commit + frozen hashes
 
             # --- B. COMPOSE ---
@@ -557,9 +577,12 @@ def run(repo: Path, budget: Budget) -> RunOutcome:
             state.record(session, task, turn, proof)     # increments attempts
             if proof.verdict is Verdict.PASS:
                 state.mark_verified(task, proof)
+                vcs.commit_verified_task(repo, task, proof)   # §7.6: HEAD moves
             elif task.attempts >= task.max_attempts:
                 state.escalate(task, reason="attempts_exhausted")
-                return state.end_run(session, "blocked")
+                return state.end_run(session, "blocked")      # tree left as-is
+            else:
+                vcs.revert_working_tree(repo)                 # §7.6: clean slate
             # else: fall through — next iteration re-selects this task and
             # prompt_engine sees proof in prior_attempts, producing a corrective prompt
 ```
@@ -718,6 +741,7 @@ is pending, not missing.
 | `E_NOT_A_REPO` | The target directory is not a git repository | Run from a repository root |
 | `E_ALREADY_INITIALIZED` | `init` run over an existing `.redgear/` (§9) | Nothing to do; state exists |
 | `E_HARNESS_ERROR` | A configured harness command is rejected (§7.3) or fails to launch | Report as environment failure |
+| `E_COMMIT_FAILED` | `git commit` of a verified task fails (§7.6) | Fix git's configuration; the work and its proof are still on disk |
 
 **Runner**
 
@@ -743,8 +767,14 @@ those six reasons and has no entry for it, and `state_engine.next_ready_task`
 returns `None` rather than raising. Four independent parts of the contract
 agreed; only this table disagreed.
 
-Nineteen codes. If a needed failure has no code here, that is a contract gap —
-report it rather than inventing a code.
+Twenty codes. `E_COMMIT_FAILED` joined when G6 was amended to let redgear
+commit: a failed commit is an *environment* problem — a rejected hook, a
+missing `user.email`, a full disk — and the user's correct response differs
+from every other code here, which is what earns it one of its own rather than
+being folded into `E_HARNESS_ERROR`.
+
+If a needed failure has no code here, that is a contract gap — report it
+rather than inventing a code.
 
 ---
 
@@ -1090,9 +1120,9 @@ nested run overwrites the outer session's own report.
 
 ### 7.4 Git diff computation
 
-Baseline is established at **claim** time, not verification time: `base_commit` from `git rev-parse HEAD`.
+Baseline is established at **claim** time, not verification time: the tree is asserted clean, then `base_commit` comes from `git rev-parse HEAD`.
 
-**Correction, verified directly against the code rather than assumed: the tree is asserted clean once, at run start (section 8.4), not re-asserted at each individual claim.** `orchestrator.run` calls `gitctx.dirty_paths` exactly once, before the loop begins; `state_engine.claim_task` never checks tree cleanliness at all. For a run's first claim these coincide and the distinction is invisible. They stop coinciding the moment a run claims a **second** task: nothing commits between tasks (G6), so `base_commit` computed fresh at the second claim (`git rev-parse HEAD`) is still the *same* commit as the first claim's, and the working tree is no longer clean relative to it — it carries the first task's own real, uncommitted, already-verified output. See G6's note above and `docs/PROGRESS.md` §5 ("Nothing commits between tasks") for what this does to `scope_check` on the very next task, found by the first real multi-task run.
+**Both halves of that sentence are load-bearing, and the cleanliness assertion really does run at every claim** — not only once at run start, which is what it used to do. The two are the same statement for a run's first claim and stop being the same the moment a second task claims. Since a verified task is committed (§7.6), `HEAD` genuinely moves between tasks, so the second claim's `base_commit` is its predecessor's commit rather than a stale pre-run one, and the tree really is clean relative to it. Before that was true, a verified task's own uncommitted output sat in the tree and appeared in the *next* task's diff as an out-of-scope write — the failure that motivated G6's amendment.
 
 ```python
 # Untracked files do not appear in `git diff`. Intent-to-add makes them visible
@@ -1126,6 +1156,38 @@ def changed_lines_from_patch(patch: str) -> dict[str, set[int]]:
 ```
 
 Denominator is `changed_lines ∩ (executed_lines ∪ missing_lines)` per file — lines coverage.py does not classify (blank, comment, excluded) are dropped, because counting them punishes formatting. Ratio is `1.0` when the denominator is empty.
+
+### 7.6 Commit and revert — `vcs.py`
+
+The only module that mutates git (§2.2). Two operations, and only two. Three behaviours, decided together because each one's safety depends on the other two:
+
+| When | What happens |
+| --- | --- |
+| **A task verifies** | One commit, immediately after the proof is written and `task_verified` is appended. |
+| **A task is rejected with attempts remaining** | The working tree is restored to `HEAD` before the retry dispatches. |
+| **A task escalates** | Nothing is committed, nothing is reverted. |
+
+**Why the tree is reverted on rejection.** Otherwise attempt 2 starts on top of attempt 1's failed code and the agent inherits half-finished work it did not write. A clean tree plus a precise failure excerpt is a better starting position, and it makes each attempt an independent, auditable experiment rather than three tangled ones.
+
+**Why nothing happens on escalation.** A human has to diagnose it. Reverting destroys the evidence they need; committing enshrines broken work. The tree is left exactly as the agent left it, `redgear status` says so and names the command to discard it, and the run then refuses to resume on that dirty tree via the existing `E_DIRTY_TREE` (§8.4) — which is the refusal working, not a bug.
+
+**How the revert is bounded.** It is the only destructive thing redgear does, so it is bounded by a precondition rather than by care:
+
+1. The tree is asserted clean **before every claim** (§8.4). Everything dirty at rejection time therefore belongs to that turn, and restoring to `HEAD` means "undo this turn". Unexpected dirt stops the run and reverts *nothing* — destroying a human's mid-run edit is not redgear's call.
+2. `.redgear/` is excluded unconditionally. Reverting the event log would destroy the audit trail mid-run; this is the single most dangerous mistake available in the module.
+3. No `-x`. Ignored files — a virtualenv, a build directory — are never removed.
+4. The proof, including `diff.patch`, is persisted **before** the revert. The evidence outlives the files.
+5. Every discarded path is named in `working_tree_reverted`, not counted.
+
+A file the agent created **outside** its scope is removed by the revert. It is already a gate failure, and leaving it would put it in the next attempt's diff forever — the same stale-baseline bug one turn smaller.
+
+**Command order is load-bearing.** `git restore --staged --worktree` runs *before* `git clean -fd`. `gitctx` stages untracked files with `git add -A -N` during verification (§7.4), and `git clean` does not remove files that are in the index — so the unstage has to come first or every file the agent created survives the revert, silently. `git restore` rather than `git checkout --`, because `checkout` on an intent-to-add entry errors or truncates the file to empty.
+
+**What is committed.** Everything except two transient control files: `.redgear/locks/**` (live for the whole run) and `.redgear/STOP` (a sentinel, not a record). Everything else under `.redgear/` — the event log, the projection, the prompts, the proofs — is committed *with* the work, because a commit containing the work but not the evidence for it is exactly the split-brain this project exists to prevent. A blanket `git add` is safe here specifically because `scope_check` already passed: a verified task has by construction changed only paths inside its declared scope. It is the gate that makes the add safe, not the add.
+
+**`--no-verify` is used, deliberately, and users are told.** A target repository's pre-commit hook that reformats would mutate the tree *after* the proof was computed, so the commit would carry content no gate ever saw — G1 violated by accident, which is the worst way to violate it. And redgear has already run that repository's own configured lint and test commands as gates 3 and 4, so a hook re-running them can only deadlock the loop against a check that already passed. This is stated in §8.4 and in the README because "redgear bypasses your hooks" must be something a user reads rather than discovers.
+
+**Undoing a committed task.** A plain `git revert` of a task commit **conflicts**, and that is correct rather than a defect: each commit carries the appended event log, later commits append to the same file, so reverting one would have to delete log lines written on top of it — which §11.1 rule 5 forbids outright. The conflict is the audit trail refusing to lose history. The right way to undo a task is to restore its work paths (`git checkout <sha>^ -- <writable globs>`) and leave the log to record that the task was verified and later undone. Both statements remain true, which is the point of an append-only log.
 
 ---
 
@@ -1170,8 +1232,11 @@ Checked **before** each iteration begins, never mid-turn. A cap hit ends the run
 
   The dirty-tree check excludes `.redgear/`. The run lock is acquired before the check and lives under that directory, so a run would otherwise refuse to start on dirt it had just created. `paths.is_state_path` is the single home for this rule; do not reimplement it per call site.
 
+  The same check runs **before every claim**, not only at run start. Between tasks the tree is clean because a verified task was committed and a rejected one was reverted (§7.6), so dirt at a claim means something outside the run wrote to the tree while it was running. The correct response is to stop and revert nothing.
+
 - Refuse to start outside a git repository.
-- Never commit, push, rebase, reset, or checkout in the target repo. The human owns git.
+- **Commit verified work; never push, rebase, reset, cherry-pick, or rewrite history in the target repo.** The human owns the repository and its history; redgear owns only the local commits it can prove (§7.6).
+- **redgear commits with `--no-verify`, bypassing the target repository's own git hooks.** A hook that reformats would mutate the tree after the proof was computed, so the commit would carry content no gate ever saw. redgear has already run that repository's configured lint and test commands itself as gates 3 and 4. This is stated here, and in the README, because it is a surprise a user must read rather than discover.
 - Print a one-line summary at the end of every run: iterations, tasks verified, tasks escalated, estimated spend, wall clock.
 
 ---
@@ -1303,7 +1368,7 @@ One documented manual procedure in `docs/agents/claude-code.md`: run `redgear ru
 9. **Never increment `attempts` on a `blocked` or `scope_insufficient` outcome.** G3.
 10. **Never import an LLM SDK or open a socket** from `redgear/`. G5.
 11. **Never read, log, or store the value of an auth environment variable.** Propagate only. G5.
-12. **Never commit, push, or rewrite git history** in the target repository. G6.
+12. **Never push, rebase, reset, cherry-pick, or rewrite git history** in the target repository, and never commit from anywhere but `vcs.py`. G6, §7.6.
 13. **Never call a real agent CLI or model from a test.** §10.4.
 14. **Never branch on agent CLI identity** outside `runner.py`. §2.4.
 15. **Never fuse `plan` and `run`** into one command. §3.3.
@@ -1393,10 +1458,11 @@ Gate order:        scope_check → frozen_hash_check → lint → tests_pass
 Source of truth:   .redgear/events.jsonl
 Only writer:       redgear/state_engine.py
 Only spawner:      redgear/runner.py
+Only git mutator:  redgear/vcs.py — commit verified work, revert a failed try
 Test rig:          tests/fake_runner/ — deterministic, no model, under 90s
 Brake:             redgear stop  →  .redgear/STOP
 Never:             shell=True · skip-permissions · dispatch before persisting
-                   commit in the target repo · read an auth env var
+                   push/rebase/reset/rewrite history · read an auth env var
                    import an LLM SDK · call a real agent CLI from a test
-                   fuse plan and run
+                   fuse plan and run · revert on escalation
 ```

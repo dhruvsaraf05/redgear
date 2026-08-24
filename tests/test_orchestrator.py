@@ -588,9 +588,11 @@ def test_termination_reasons_and_exit_codes(repo: Path) -> None:
     # budget_exhausted in test_budget_exhausted_stops_after_exactly_the_cap,
     # stopped in test_stop_sentinel_ends_the_run_cleanly, and runner_error in
     # test_parse_failure_twice_is_runner_error. Only one is driven here,
-    # because a second run against this repository would refuse to start on
-    # the tree the first one left dirty -- which is section 8.4 working, not a
-    # test problem.
+    # because each reason wants its own repository state to be reached
+    # honestly rather than a second run inheriting the first one's queue.
+    # (This once read that a second run would refuse on the tree the first
+    # left dirty. It no longer would: a verified task is committed and a
+    # rejected one is reverted, so a completed run leaves the tree clean.)
     outcome = _run(repo, FakeRunner(WRITES_CLEAN))
     assert outcome.reason == "complete"
     assert outcome.exit_code == TERMINATION_EXIT_CODES[outcome.reason]

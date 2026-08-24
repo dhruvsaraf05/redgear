@@ -174,6 +174,26 @@ EVENT_PAYLOADS: list[dict[str, Any]] = [
         "attempted": 3,
     },
     {
+        "event": "task_committed",
+        "ts": "2026-08-11T00:06:00Z",
+        "actor": "engine",
+        "task_id": "T-0002",
+        "attempt": 2,
+        "commit_sha": "4f2c1a9b8e7d6c5b4a39281706f5e4d3c2b1a098",
+        "subject": "T-0002: implement retry backoff",
+        "files_committed": 4,
+    },
+    {
+        "event": "working_tree_reverted",
+        "ts": "2026-08-11T00:06:30Z",
+        "actor": "engine",
+        "task_id": "T-0002",
+        "attempt": 1,
+        "restored_to": "8ac1471000000000000000000000000000000a",
+        "paths_restored": ["src/pkg/broken.py", "src/pkg/stray.py"],
+        "reason": "gate_failure",
+    },
+    {
         "event": "lease_expired",
         "ts": "2026-08-12T00:05:00Z",
         "actor": "engine",
@@ -290,15 +310,15 @@ def test_concurrent_appends_never_duplicate_seq(log_path: Path) -> None:
 
 
 def test_all_event_types_round_trip(log_path: Path) -> None:
-    """All 14 section 3.6 types survive write-then-replay without loss."""
-    assert len(EVENT_PAYLOADS) == 14, "section 3.6 closes the taxonomy at 14 types"
-    assert len({p["event"] for p in EVENT_PAYLOADS}) == 14, "one payload per type"
+    """All 16 section 3.6 types survive write-then-replay without loss."""
+    assert len(EVENT_PAYLOADS) == 16, "section 3.6 closes the taxonomy at 16 types"
+    assert len({p["event"] for p in EVENT_PAYLOADS}) == 16, "one payload per type"
 
     for payload in EVENT_PAYLOADS:
         append(log_path, payload)
 
     replayed = replay(log_path)
-    assert len(replayed) == 14
+    assert len(replayed) == 16
 
     for index, (payload, event) in enumerate(zip(EVENT_PAYLOADS, replayed, strict=True)):
         assert event.event == payload["event"]

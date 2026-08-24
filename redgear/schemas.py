@@ -379,7 +379,7 @@ class Proof(Strict):
 
 
 # ---------------------------------------------------------------------------
-# Events -- CLAUDE.md section 3.6, closed at 14 types
+# Events -- CLAUDE.md section 3.6, closed at 16 types
 # ---------------------------------------------------------------------------
 
 
@@ -503,6 +503,42 @@ class TaskEscalatedEvent(EventBase):
     attempted: int
 
 
+class TaskCommittedEvent(EventBase):
+    """A verified task's work was committed to the local repository.
+
+    Appended *after* the commit, because the sha does not exist before it --
+    so this record lands in the *next* task's commit rather than the one it
+    describes. That is inherent to recording a fact about an object whose
+    identity the fact depends on, and is stated here rather than left for a
+    reader to notice a one-commit lag and assume a bug.
+    """
+
+    event: Literal["task_committed"]
+    task_id: str
+    attempt: int
+    commit_sha: str
+    subject: str
+    files_committed: int
+
+
+class WorkingTreeRevertedEvent(EventBase):
+    """The working tree was restored to ``restored_to``, discarding a failed
+    attempt's writes.
+
+    The one destructive operation redgear performs, so it names every path it
+    discarded rather than counting them: a destructive act nobody can review
+    afterwards is not auditable, and the whole point of the log is that it can
+    be read back.
+    """
+
+    event: Literal["working_tree_reverted"]
+    task_id: str
+    attempt: int
+    restored_to: str
+    paths_restored: list[str]
+    reason: Literal["gate_failure", "unparseable_result"]
+
+
 class LeaseExpiredEvent(EventBase):
     event: Literal["lease_expired"]
     task_id: str
@@ -534,6 +570,8 @@ type Event = Annotated[
     | TaskVerifiedEvent
     | TaskRejectedEvent
     | TaskEscalatedEvent
+    | TaskCommittedEvent
+    | WorkingTreeRevertedEvent
     | LeaseExpiredEvent
     | AdrLoggedEvent,
     Field(discriminator="event"),

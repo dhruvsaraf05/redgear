@@ -149,8 +149,12 @@ Every design decision in this project traces back to one of these:
    belongs to your agent CLI session, not to redgear.
 6. **Every run is bounded, and interruptible.** Hard caps on iterations,
    wall-clock time, and consecutive failures; a stop file honored between
-   iterations; a process-tree kill on timeout. It never commits, pushes, or
-   rewrites history in your repository. That stays yours.
+   iterations; a process-tree kill on timeout. It commits verified work to
+   your local repository and touches git in no other way: it never pushes,
+   rebases, resets, or rewrites history. One commit per verified task, each
+   carrying the proof that justifies it. A task that fails gets its working
+   tree restored before the retry; a task that escalates keeps its failure
+   state, untouched, for you to read.
 7. **Untrusted text is never treated as an instruction.** Test output, diffs,
    and source documents are explicitly delimited in every prompt as data to
    diagnose, not commands to follow.
@@ -181,6 +185,30 @@ or persist it once in `.redgear/config.json`:
 
 `redgear doctor` reports whichever one is actually configured, and whether it
 resolves. Run it first if a run fails with "not installed or not on PATH."
+
+### What redgear does to your git repository
+
+Worth knowing before the first run, because two of these will surprise you:
+
+- **It commits each verified task**, to your local repository only, using
+  your own git identity — no signature, no co-author trailer. The message
+  carries the task id, the gates that passed, the spec hash, and a path to
+  the proof.
+- **It commits with `--no-verify`, bypassing your pre-commit hooks.** A hook
+  that reformats would change the tree *after* redgear computed the proof, so
+  the commit would carry code no gate ever checked. redgear has already run
+  your configured lint and test commands itself, independently, as part of
+  verification.
+- **It restores the working tree after a failed attempt**, so the retry
+  starts clean instead of on top of half-finished work. It never touches
+  anything outside the failed turn: the tree is checked clean before every
+  task, `.redgear/` is never reverted, and ignored files (your `.venv`, your
+  build output) are never removed.
+- **It leaves an escalated task's tree exactly as the agent left it.** That
+  failure state is the evidence you need, so nothing is committed and nothing
+  is discarded. `redgear status` tells you how to clear it when you're done.
+- **It never pushes, rebases, resets, or rewrites history.** That stays
+  yours.
 
 ## The plan
 
