@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "redgear"
-version = "0.1.0"
+version = "0.2.0"
 description = "An autonomous orchestrator that plans software projects, generates task prompts, drives a coding agent CLI in a continuous verified loop, and refuses to accept unproven work."
 readme = "README.md"
 requires-python = ">=3.12"
