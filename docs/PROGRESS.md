@@ -1721,29 +1721,43 @@ that introduced the staleness and the README-cleanup task that fixed
 `CLAUDE.md`. Worth folding into whatever session next touches `hashing.py`
 for an unrelated reason.
 
-### `release.yml`'s GitHub/PyPI setup — still needs doing by hand
+### `release.yml`'s GitHub/PyPI setup — DONE, and shipping 0.1.0 proved it
 
-The workflow itself is correct for PyPI trusted publishing: `id-token: write`
-on the `publish` job, no stored token anywhere, `pypa/gh-action-pypi-publish
-@release/v1`. **Neither side of the actual trust relationship exists yet**,
-and nothing in this repository can create either — both are configured on a
-website, by a human with the right account access:
+**This entry previously said "neither side of the actual trust relationship
+exists yet." That was wrong, and it stayed wrong long enough to mislead a
+later session twice** — first into asserting redgear could not be installed
+at all, then into writing setup instructions for two things that were already
+configured. Both claims were repeated from this file rather than checked.
+Verified directly this time:
 
-1. **On GitHub**: create an Environment named `release` on this repository
-   (Settings → Environments) — the workflow's `environment: release` refers
-   to it, and it does not exist until someone creates it. Environment
-   protection rules (required reviewers, restricted branches) are optional
-   but are exactly what an environment gate is for on a publish step.
-2. **On PyPI**: register `redgear` as a project (if not already claimed) and
-   add a **trusted publisher** for it (PyPI project → Settings → Publishing)
-   naming this exact repository, the `release.yml` workflow filename, and the
-   `release` environment. Trusted publishing has no token to generate or
-   store — the whole point is that the OIDC exchange at publish time replaces
-   one — but the publisher relationship itself has to be declared on PyPI's
-   side before the first publish can succeed.
+- `redgear` **0.1.0 is live on PyPI**, uploaded 2026-08-18.
+- The GitHub `release` environment **exists**, with one Active deployment
+  (`T-0041`, tag `v0.1.0`).
+- The **Release workflow has run once and succeeded**, triggered by the
+  publication of Release #1 at tag `v0.1.0`.
 
-Until both exist, a GitHub Release publish event will reach the `publish` job
-and fail at the OIDC exchange, not silently succeed or silently no-op.
+That run's `publish` job authenticates by OIDC and cannot succeed unless the
+PyPI trusted publisher is configured, so the whole path — GitHub Release →
+build → OIDC → PyPI — is proven working, not merely plausible. No token is
+stored anywhere.
+
+**What actually remains is a version bump, not setup.** PyPI's 0.1.0 predates
+`e09427b` (2026-08-19) and therefore ships without: the configurable agent CLI
+binary (`d622295` — a pipx user on an MSIX/Desktop Claude install cannot point
+redgear at their binary), `vcs.py` and the commit boundary (`c4fd185` — any
+real multi-task run escalates on `scope_check` over its predecessor's verified
+output), and the harness config reader plus the three budget defects
+(`f2847bd`). `pyproject.toml` and `redgear/__init__.py` both still read
+`0.1.0`, and PyPI refuses re-uploads of an existing version, so shipping the
+fixes needs a bump — `0.2.0`, since `vcs.py` is a new module and G6 changed
+meaning.
+
+**The general lesson, which is the reason this rewrite is this long.** An
+entry describing external state (a website, a registry, another account) is
+true only on the day it is written and has no test holding it honest. This
+file's §1 table and its §2 decisions are checked constantly by the code
+around them; entries like this one are not. Re-verify before acting on any
+claim here about something outside the repository.
 
 ### The Claude Code adapter's real-CLI verification — RESOLVED, within a stated scope
 
